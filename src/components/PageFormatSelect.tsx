@@ -33,7 +33,7 @@ export function PageFormatSelect({
   return (
     <div className="page-format-select" role="group" aria-label="Formato pagina">
       <label className="page-format-field">
-        <span className="page-format-label">Pagina</span>
+        {/* <span className="page-format-label">Pagina</span> */}
         <select
           className="page-format-dropdown"
           value={formatId}

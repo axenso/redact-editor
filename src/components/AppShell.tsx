@@ -27,7 +27,7 @@ export function AppShell({
             <span className="redacta-brand-mark" aria-hidden="true">
               R
             </span>
-            <span className="redacta-brand-name">REDACTA</span>
+            {/* <span className="redacta-brand-name">REDACTA</span> */}
           </div>
 
           <div className="redacta-header-meta">

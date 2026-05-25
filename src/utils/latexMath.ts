@@ -37,16 +37,18 @@ function escapeHtmlAttr(value: string): string {
     .replace(/</g, '&lt;')
 }
 
+function replaceInlineDollarMath(text: string): string {
+  return text.replace(/\$([^$\n]+?)\$/g, (_match, latex) =>
+    buildMathHtml(String(latex).trim(), false),
+  )
+}
+
 export function replaceMarkdownMathDelimiters(markdown: string): string {
-  let result = markdown.replace(/\$\$([\s\S]+?)\$\$/g, (_match, latex) =>
+  const withoutBlocks = markdown.replace(/\$\$([\s\S]+?)\$\$/g, (_match, latex) =>
     buildMathHtml(String(latex), true),
   )
 
-  result = result.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_match, latex) =>
-    buildMathHtml(String(latex), false),
-  )
-
-  return result
+  return replaceInlineDollarMath(withoutBlocks)
 }
 
 export function replaceLatexMathDelimiters(latex: string): string {
@@ -62,11 +64,7 @@ export function replaceLatexMathDelimiters(latex: string): string {
     buildMathHtml(String(body), true),
   )
 
-  result = result.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_match, body) =>
-    buildMathHtml(String(body), false),
-  )
-
-  return result
+  return replaceInlineDollarMath(result)
 }
 
 export function mathHtmlToLatex(node: HTMLElement): string {

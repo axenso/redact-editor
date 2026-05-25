@@ -17,7 +17,7 @@ export function WritingModeSelect({
   return (
     <div className="writing-mode-select" role="group" aria-label="Modalità di scrittura">
       <label className="writing-mode-field">
-        <span className="writing-mode-label">Modalità</span>
+        {/* <span className="writing-mode-label">Modalità</span> */}
         <select
           className="writing-mode-dropdown"
           value={mode}

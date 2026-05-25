@@ -33,10 +33,6 @@ function createMathNode(displayMode: boolean) {
     },
     renderHTML({ node, HTMLAttributes }) {
       const latex = String(node.attrs.latex ?? '')
-      const rendered = katex.renderToString(latex, {
-        displayMode,
-        throwOnError: false,
-      })
 
       return [
         tag,
@@ -45,7 +41,6 @@ function createMathNode(displayMode: boolean) {
           'data-latex': latex,
           'data-math-display': displayAttr,
         }),
-        ['span', { class: 'math-formula-render', innerHTML: rendered }],
       ]
     },
     addNodeView() {

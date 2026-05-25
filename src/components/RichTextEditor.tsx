@@ -18,12 +18,10 @@ import { LineHeight } from '../extensions/LineHeight'
 import {
   ChartBlock,
   type ChartBlockAttrs,
-  type ChartBlockStorage,
 } from '../extensions/ChartBlock'
 import {
   ImageBlock,
   type ImageBlockAttrs,
-  type ImageBlockStorage,
 } from '../extensions/ImageBlock'
 import { AppShell } from './AppShell'
 import { Toolbar } from './Toolbar'
@@ -231,6 +229,7 @@ export function RichTextEditor() {
   )
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit,
       Underline,
@@ -781,9 +780,11 @@ export function RichTextEditor() {
   )
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
 
-    const storage = editor.storage.imageBlock as ImageBlockStorage
+    const storage = editor.storage.imageBlock
+    if (!storage) return
+
     storage.onEditImage = (pos, attrs) => {
       setImageModalMode('edit')
       setImageEditPos(pos)
@@ -792,14 +793,20 @@ export function RichTextEditor() {
     }
 
     return () => {
-      storage.onEditImage = null
+      if (editor.isDestroyed) return
+      const currentStorage = editor.storage.imageBlock
+      if (currentStorage) {
+        currentStorage.onEditImage = null
+      }
     }
   }, [editor])
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
 
-    const storage = editor.storage.chartBlock as ChartBlockStorage
+    const storage = editor.storage.chartBlock
+    if (!storage) return
+
     storage.onEditChart = (pos, attrs) => {
       setChartModalMode('edit')
       setChartEditPos(pos)
@@ -811,8 +818,12 @@ export function RichTextEditor() {
     }
 
     return () => {
-      storage.onEditChart = null
-      storage.onAiGenerateChart = null
+      if (editor.isDestroyed) return
+      const currentStorage = editor.storage.chartBlock
+      if (currentStorage) {
+        currentStorage.onEditChart = null
+        currentStorage.onAiGenerateChart = null
+      }
     }
   }, [editor, openAiGenerate])
 
@@ -1123,7 +1134,7 @@ export function RichTextEditor() {
   return (
     <AppShell
       title="Il mio documento"
-      subtitle="Editor testuale con AI e storico versioni"
+      //subtitle="Editor testuale con AI e storico versioni"
       headerActions={
         <>
           <PageFormatSelect
@@ -1198,8 +1209,8 @@ export function RichTextEditor() {
             className="editor-page"
             style={{ minHeight: pageLayout.heightPx }}
           >
-            {writingMode === 'markdown' ? (
-              <div className="editor-content-shell editor-content-shell--markdown">
+            {sourceEditorActive && writingMode === 'markdown' && (
+              <div className="editor-content-shell editor-content-shell--markdown editor-source-pane">
                 {writingModeError && (
                   <p className="source-editor-error" role="alert">
                     {writingModeError}
@@ -1211,8 +1222,10 @@ export function RichTextEditor() {
                   onChange={handleMarkdownSourceChange}
                 />
               </div>
-            ) : writingMode === 'latex' ? (
-              <div className="editor-content-shell editor-content-shell--latex">
+            )}
+
+            {sourceEditorActive && writingMode === 'latex' && (
+              <div className="editor-content-shell editor-content-shell--latex editor-source-pane">
                 {writingModeError && (
                   <p className="source-editor-error" role="alert">
                     {writingModeError}
@@ -1224,8 +1237,10 @@ export function RichTextEditor() {
                   onChange={handleLatexSourceChange}
                 />
               </div>
-            ) : writingMode === 'typst' ? (
-              <div className="editor-content-shell editor-content-shell--typst">
+            )}
+
+            {sourceEditorActive && writingMode === 'typst' && (
+              <div className="editor-content-shell editor-content-shell--typst editor-source-pane">
                 {writingModeError && (
                   <p className="source-editor-error" role="alert">
                     {writingModeError}
@@ -1237,31 +1252,36 @@ export function RichTextEditor() {
                   onChange={handleTypstSourceChange}
                 />
               </div>
-            ) : (
-              <>
-                <div
-                  className={
-                    aiMenuMode === 'bubble'
-                      ? 'editor-content-shell editor-content-shell--bubble'
-                      : 'editor-content-shell'
-                  }
-                >
-                  <EditorContent editor={editor} />
+            )}
+
+            <div
+              className={
+                sourceEditorActive
+                  ? 'editor-visual-host editor-visual-host--hidden'
+                  : aiMenuMode === 'bubble'
+                    ? 'editor-content-shell editor-content-shell--bubble editor-visual-host'
+                    : 'editor-content-shell editor-visual-host'
+              }
+              aria-hidden={sourceEditorActive}
+            >
+              <EditorContent editor={editor} />
+              {!sourceEditorActive && (
+                <>
                   <EditorBlockGutter
                     editor={editor}
                     enabled={aiMenuMode === 'bubble'}
                     onInsertImage={openImageInsertModal}
                     onInsertTable={() => openTableInsertModal()}
                   />
-                </div>
-                <TableHoverControls
-                  editor={editor}
-                  onAiGenerateTable={(tablePos) =>
-                    openAiGenerate('table', { tablePos })
-                  }
-                />
-              </>
-            )}
+                  <TableHoverControls
+                    editor={editor}
+                    onAiGenerateTable={(tablePos) =>
+                      openAiGenerate('table', { tablePos })
+                    }
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
         <EditorMetaFooter
