@@ -27,11 +27,10 @@ import {
 } from '../extensions/ImageBlock'
 import { AppShell } from './AppShell'
 import { Toolbar } from './Toolbar'
-import { SelectionBubbleMenu } from './SelectionBubbleMenu'
 import { EditorBlockGutter } from './EditorBlockGutter'
-import { SelectionContextMenu } from './SelectionContextMenu'
 import { AiMenuModeToggle } from './AiMenuModeToggle'
 import { AiPromptModal } from './AiPromptModal'
+import { EditorInsertContextMenu } from './EditorInsertContextMenu'
 import { EditorMetaFooter } from './EditorMetaFooter'
 import { HistoryRestoreActions } from './HistoryRestoreActions'
 import { HistorySidebar } from './HistorySidebar'
@@ -61,10 +60,8 @@ import { AiGenerateModal } from './AiGenerateModal'
 import type { AiGenerateKind } from './AiGenerateForm'
 import { TableInsertModal } from './TableInsertModal'
 import type { InsertModalTab } from './ModalInsertTabs'
-import { ReferencePanel } from './ReferencePanel'
 import { useAutosave } from '../hooks/useAutosave'
 import { useEditHistory } from '../hooks/useEditHistory'
-import { useReferences } from '../hooks/useReferences'
 import { docHasDiffMarks, useInlineDiff } from '../hooks/useInlineDiff'
 import { restoreEditorContent } from '../utils/restoreEditorContent'
 import { scrollEditorToHistoryChange } from '../utils/historyScrollTarget'
@@ -140,7 +137,6 @@ export function RichTextEditor() {
   } | null>(null)
   const [aiGenerateLoading, setAiGenerateLoading] = useState(false)
   const [aiGenerateError, setAiGenerateError] = useState<string | null>(null)
-  const [referencePanelOpen, setReferencePanelOpen] = useState(false)
   const { status, lastSavedAt, documentMeta, scheduleSave, saveNow, flushPending } =
     useAutosave()
   const {
@@ -171,16 +167,6 @@ export function RichTextEditor() {
     showDiffInDocument,
     shouldFinalizeOnEdit,
   } = useInlineDiff()
-  const {
-    references,
-    activeRefs,
-    addReference,
-    toggleReference,
-    removeReference,
-    activeCount,
-    activeTokenEstimate,
-    isOverTokenLimit,
-  } = useReferences()
 
   const handleAiMenuModeChange = useCallback((mode: AiMenuMode) => {
     setAiMenuMode(mode)
@@ -547,7 +533,6 @@ export function RichTextEditor() {
           const chartAttrs = await generateChartWithAI({
             instruction,
             context,
-            activeRefs,
             existingChart,
           })
           if (target?.chartPos != null) {
@@ -563,7 +548,6 @@ export function RichTextEditor() {
           const tableData = await generateTableWithAI({
             instruction,
             context,
-            activeRefs,
           })
           const ok =
             target?.tablePos != null
@@ -587,7 +571,7 @@ export function RichTextEditor() {
         setAiGenerateLoading(false)
       }
     },
-    [editor, getDocumentContext, activeRefs],
+    [editor, getDocumentContext],
   )
 
   const handleAiGenerateSubmit = useCallback(
@@ -705,7 +689,6 @@ export function RichTextEditor() {
           tableData = await generateTableWithAI({
             instruction,
             context: currentSelectedText,
-            activeRefs,
           })
         }
 
@@ -713,7 +696,6 @@ export function RichTextEditor() {
           const modified = await modifyTextWithAI({
             text: currentSelectedText,
             instruction,
-            activeRefs,
             inTable: editor.isActive('table'),
             wantsTableOutput: tableRequested,
           })
@@ -724,7 +706,6 @@ export function RichTextEditor() {
             tableData = await generateTableWithAI({
               instruction,
               context: `${currentSelectedText}\n\n${modified}`,
-              activeRefs,
             })
           }
 
@@ -786,7 +767,6 @@ export function RichTextEditor() {
       selectedText,
       recordAppliedEdit,
       saveNow,
-      activeRefs,
     ],
   )
 
@@ -854,8 +834,6 @@ export function RichTextEditor() {
           showAiButton={aiMenuMode === 'toolbar'}
           hasTextSelection={hasTextSelection}
           onAiClick={handleOpenAiModal}
-          onReferencesClick={() => setReferencePanelOpen(true)}
-          activeReferenceCount={activeCount}
         />
       }
       sidebar={
@@ -908,30 +886,13 @@ export function RichTextEditor() {
           lastSavedAt={lastSavedAt}
           documentMeta={documentMeta}
         />
-        <SelectionBubbleMenu
+        <EditorInsertContextMenu
           editor={editor}
-          enabled={aiMenuMode === 'bubble'}
+          enabled={aiMenuMode === 'bubble' || aiMenuMode === 'contextmenu'}
           onAiClick={handleOpenAiModal}
           onAiQuickAction={handleAiQuickAction}
         />
-        <SelectionContextMenu
-          editor={editor}
-          enabled={aiMenuMode === 'contextmenu'}
-          onAiClick={handleOpenAiModal}
-        />
       </div>
-
-      <ReferencePanel
-        isOpen={referencePanelOpen}
-        references={references}
-        activeCount={activeCount}
-        activeTokenEstimate={activeTokenEstimate}
-        isOverTokenLimit={isOverTokenLimit}
-        onClose={() => setReferencePanelOpen(false)}
-        onToggle={toggleReference}
-        onRemove={removeReference}
-        onAdd={addReference}
-      />
 
       <AiPromptModal
         selectedText={selectedText}
@@ -958,7 +919,6 @@ export function RichTextEditor() {
         isOpen={tableModalOpen}
         initialTab={tableInsertTab}
         documentContext={getDocumentContext()}
-        activeRefs={activeRefs}
         aiLoading={aiGenerateLoading}
         aiError={aiGenerateError}
         onClose={() => {
@@ -975,7 +935,6 @@ export function RichTextEditor() {
           kind={aiGenerateKind}
           isOpen={aiGenerateKind !== null}
           documentContext={getDocumentContext()}
-          activeRefs={activeRefs}
           isLoading={aiGenerateLoading}
           error={aiGenerateError}
           mode={
@@ -1000,7 +959,6 @@ export function RichTextEditor() {
         initialAttrs={chartEditAttrs}
         initialTab={chartInsertTab}
         documentContext={getDocumentContext()}
-        activeRefs={activeRefs}
         aiLoading={aiGenerateLoading}
         aiError={aiGenerateError}
         onClose={() => {

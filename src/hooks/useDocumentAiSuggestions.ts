@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AiGenerateKind } from '../components/AiGenerateForm'
 import { generateDocumentSuggestionsWithAI } from '../services/aiService'
-import type { Reference } from '../types/reference'
 import {
   buildSuggestionsFromText,
   type DocumentSuggestionKind,
@@ -11,7 +10,6 @@ export function useDocumentAiSuggestions(
   kind: DocumentSuggestionKind | AiGenerateKind,
   documentContext: string,
   enabled: boolean,
-  activeRefs: Reference[] = [],
 ) {
   const [suggestions, setSuggestions] = useState<string[]>(() =>
     buildSuggestionsFromText(kind, documentContext),
@@ -25,7 +23,7 @@ export function useDocumentAiSuggestions(
     setLoading(true)
     setSuggestions(buildSuggestionsFromText(kind, documentContext))
 
-    void generateDocumentSuggestionsWithAI(kind, documentContext, activeRefs)
+    void generateDocumentSuggestionsWithAI(kind, documentContext)
       .then((items) => {
         if (!cancelled) setSuggestions(items)
       })
@@ -36,7 +34,7 @@ export function useDocumentAiSuggestions(
     return () => {
       cancelled = true
     }
-  }, [kind, documentContext, enabled, activeRefs])
+  }, [kind, documentContext, enabled])
 
   return { suggestions, loading }
 }

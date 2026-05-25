@@ -1,6 +1,5 @@
 import type { AiGenerateKind } from './AiGenerateForm'
 import { AiGenerateForm } from './AiGenerateForm'
-import type { Reference } from '../types/reference'
 import { useDocumentAiSuggestions } from '../hooks/useDocumentAiSuggestions'
 
 export type { AiGenerateKind }
@@ -9,7 +8,6 @@ interface AiGenerateModalProps {
   kind: AiGenerateKind
   isOpen: boolean
   documentContext?: string
-  activeRefs?: Reference[]
   isLoading: boolean
   error: string | null
   mode?: 'insert' | 'regenerate'
@@ -31,7 +29,6 @@ export function AiGenerateModal({
   kind,
   isOpen,
   documentContext = '',
-  activeRefs = [],
   isLoading,
   error,
   mode = 'insert',
@@ -42,7 +39,6 @@ export function AiGenerateModal({
     kind,
     documentContext,
     isOpen,
-    activeRefs,
   )
 
   if (!isOpen) return null

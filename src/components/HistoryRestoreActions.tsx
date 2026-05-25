@@ -1,7 +1,6 @@
 import { Sparkles } from 'lucide-react'
 import type { AutosaveStatus } from '../hooks/useAutosave'
 import { AppIcon } from './LucideIcon'
-import { ReferenceChip } from './ReferenceChip'
 
 interface HistoryRestoreActionsProps {
   showRestoreLinks: boolean
@@ -13,8 +12,6 @@ interface HistoryRestoreActionsProps {
   showAiButton?: boolean
   hasTextSelection?: boolean
   onAiClick?: () => void
-  onReferencesClick?: () => void
-  activeReferenceCount?: number
 }
 
 export function HistoryRestoreActions({
@@ -27,8 +24,6 @@ export function HistoryRestoreActions({
   showAiButton = false,
   hasTextSelection = false,
   onAiClick,
-  onReferencesClick,
-  activeReferenceCount = 0,
 }: HistoryRestoreActionsProps) {
   const isChanged =
     autosaveStatus === 'saving' ||
@@ -76,12 +71,6 @@ export function HistoryRestoreActions({
       </div>
 
       <div className="editor-meta-bar-actions">
-        {onReferencesClick && (
-          <ReferenceChip
-            activeCount={activeReferenceCount}
-            onClick={onReferencesClick}
-          />
-        )}
         {showAiButton && hasTextSelection && onAiClick && (
           <button
             type="button"

@@ -8,7 +8,6 @@ import {
 import { AiGenerateForm } from './AiGenerateForm'
 import { ModalInsertTabs, type InsertModalTab } from './ModalInsertTabs'
 import { useDocumentAiSuggestions } from '../hooks/useDocumentAiSuggestions'
-import type { Reference } from '../types/reference'
 
 interface ChartEditorModalProps {
   isOpen: boolean
@@ -16,7 +15,6 @@ interface ChartEditorModalProps {
   initialAttrs?: ChartBlockAttrs | null
   initialTab?: InsertModalTab
   documentContext?: string
-  activeRefs?: Reference[]
   aiLoading?: boolean
   aiError?: string | null
   onClose: () => void
@@ -49,7 +47,6 @@ export function ChartEditorModal({
   initialAttrs,
   initialTab = 'manual',
   documentContext = '',
-  activeRefs = [],
   aiLoading = false,
   aiError = null,
   onClose,
@@ -65,7 +62,6 @@ export function ChartEditorModal({
       'chart',
       documentContext,
       isOpen && tab === 'ai' && showAiTab,
-      activeRefs,
     )
   const [chartType, setChartType] = useState<ChartType>('bar')
   const [title, setTitle] = useState(DEFAULT_CHART_ATTRS.title)

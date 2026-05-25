@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { ModalInsertTabs, type InsertModalTab } from './ModalInsertTabs'
 import { AiGenerateForm } from './AiGenerateForm'
 import { useDocumentAiSuggestions } from '../hooks/useDocumentAiSuggestions'
-import type { Reference } from '../types/reference'
 
 interface TableInsertModalProps {
   isOpen: boolean
   initialTab?: InsertModalTab
   documentContext?: string
-  activeRefs?: Reference[]
   aiLoading: boolean
   aiError: string | null
   onClose: () => void
@@ -20,7 +18,6 @@ export function TableInsertModal({
   isOpen,
   initialTab = 'manual',
   documentContext = '',
-  activeRefs = [],
   aiLoading,
   aiError,
   onClose,
@@ -33,7 +30,6 @@ export function TableInsertModal({
       'table',
       documentContext,
       isOpen && tab === 'ai',
-      activeRefs,
     )
   const [rows, setRows] = useState(3)
   const [cols, setCols] = useState(3)

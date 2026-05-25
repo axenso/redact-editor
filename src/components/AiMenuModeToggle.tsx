@@ -14,7 +14,7 @@ export function AiMenuModeToggle({ mode, onChange }: AiMenuModeToggleProps) {
         className={mode === 'bubble' ? 'ai-menu-toggle-btn active' : 'ai-menu-toggle-btn'}
         aria-pressed={mode === 'bubble'}
         onClick={() => onChange('bubble')}
-        title="Menu a comparsa sulla selezione del testo"
+        title="Gutter + e menu AI al click destro sulla selezione"
       >
         ONE
       </button>

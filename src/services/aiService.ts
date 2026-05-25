@@ -1,7 +1,5 @@
 import type { ChartBlockAttrs, ChartType } from '../extensions/ChartBlock'
 import type { AiTableData } from '../utils/tableContent'
-import type { Reference } from '../types/reference'
-import { buildPrompt } from '../utils/buildPrompt'
 import {
   buildSuggestionsFromText,
   type DocumentSuggestionKind,
@@ -13,7 +11,6 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 export interface ModifyTextOptions {
   text: string
   instruction: string
-  activeRefs?: Reference[]
   inTable?: boolean
   wantsTableOutput?: boolean
 }
@@ -21,7 +18,6 @@ export interface ModifyTextOptions {
 export interface AiGenerateOptions {
   instruction: string
   context?: string
-  activeRefs?: Reference[]
   existingChart?: ChartBlockAttrs
 }
 
@@ -183,42 +179,9 @@ function buildExistingChartBlock(chart: ChartBlockAttrs): string {
 - Valori: ${data.join(', ') || '—'}`
 }
 
-export async function queryWithReferences(
-  userQuery: string,
-  activeRefs: Reference[],
-  taskSystemPrompt: string,
-  options?: { json?: boolean; maxTokens?: number },
-): Promise<string> {
-  const refs = activeRefs.filter((ref) => ref.active)
-
-  if (refs.length === 0) {
-    return callOpenAI(
-      [
-        { role: 'system', content: taskSystemPrompt },
-        { role: 'user', content: userQuery },
-      ],
-      options,
-    )
-  }
-
-  const { systemPrompt, userMessage } = buildPrompt(userQuery, refs)
-
-  return callOpenAI(
-    [
-      {
-        role: 'system',
-        content: `${systemPrompt}\n\n${taskSystemPrompt}`,
-      },
-      { role: 'user', content: userMessage },
-    ],
-    options,
-  )
-}
-
 export async function modifyTextWithAI({
   text,
   instruction,
-  activeRefs = [],
   inTable = false,
   wantsTableOutput = false,
 }: ModifyTextOptions): Promise<string> {
@@ -234,29 +197,31 @@ Se il risultato è una tabella, rispondi con una tabella Markdown ben formattata
 - nessun testo fuori dalla tabella.`
       : ''
 
-  return queryWithReferences(
-    userQuery,
-    activeRefs,
-    `Sei un assistente di scrittura. L'utente seleziona un testo e chiede una modifica.
+  return callOpenAI([
+    {
+      role: 'system',
+      content: `Sei un assistente di scrittura. L'utente seleziona un testo e chiede una modifica.
 Rispondi SOLO con il testo modificato, senza spiegazioni, prefissi o virgolette.
 Mantieni la lingua originale salvo richiesta esplicita di traduzione.${tableRules}`,
-  )
+    },
+    { role: 'user', content: userQuery },
+  ])
 }
 
 export async function generateChartWithAI({
   instruction,
   context,
-  activeRefs = [],
   existingChart,
 }: AiGenerateOptions): Promise<ChartBlockAttrs> {
   const userQuery = `Crea un grafico: ${instruction}${buildContextBlock(context)}${
     existingChart ? buildExistingChartBlock(existingChart) : ''
   }`
 
-  const raw = await queryWithReferences(
-    userQuery,
-    activeRefs,
-    `Generi dati per grafici. Rispondi SOLO con JSON valido nel formato:
+  const raw = await callOpenAI(
+    [
+      {
+        role: 'system',
+        content: `Generi dati per grafici. Rispondi SOLO con JSON valido nel formato:
 {
   "chartType": "bar" | "line" | "pie",
   "title": "titolo in italiano",
@@ -264,10 +229,13 @@ export async function generateChartWithAI({
   "data": [10, 20]
 }
 Regole: labels e data stessa lunghezza (2-12 elementi); data solo numeri; titolo e labels in italiano salvo richiesta diversa; dati realistici e coerenti con l'istruzione.${
-      existingChart
-        ? ' Se è fornito un grafico attuale, aggiornalo secondo l\'istruzione mantenendo coerenza con il documento.'
-        : ''
-    }`,
+          existingChart
+            ? ' Se è fornito un grafico attuale, aggiornalo secondo l\'istruzione mantenendo coerenza con il documento.'
+            : ''
+        }`,
+      },
+      { role: 'user', content: userQuery },
+    ],
     { json: true, maxTokens: 800 },
   )
 
@@ -277,22 +245,25 @@ Regole: labels e data stessa lunghezza (2-12 elementi); data solo numeri; titolo
 export async function generateTableWithAI({
   instruction,
   context,
-  activeRefs = [],
 }: AiGenerateOptions): Promise<AiTableData> {
   const userQuery = `Crea una tabella: ${instruction}${buildContextBlock(context)}`
   const conversionRules = context?.trim()
     ? `\nIl contesto contiene dati tabellari non strutturati (righe o celle separate). Estrai tutte le intestazioni, righe e colonne preservando i valori originali (importi, quantità, descrizioni).`
     : ''
 
-  const raw = await queryWithReferences(
-    userQuery,
-    activeRefs,
-    `Generi tabelle dati. Rispondi SOLO con JSON valido nel formato:
+  const raw = await callOpenAI(
+    [
+      {
+        role: 'system',
+        content: `Generi tabelle dati. Rispondi SOLO con JSON valido nel formato:
 {
   "headers": ["Colonna 1", "Colonna 2"],
   "rows": [["valore", "valore"], ["valore", "valore"]]
 }
 Regole: 2-8 colonne in headers; 1-20 righe in rows; ogni riga ha tanti elementi quante le colonne; contenuti in italiano salvo richiesta diversa; dati realistici e coerenti con l'istruzione.${conversionRules}`,
+      },
+      { role: 'user', content: userQuery },
+    ],
     { json: true, maxTokens: 1500 },
   )
 
@@ -322,7 +293,6 @@ function parseSuggestionList(raw: string, limit = DOCUMENT_SUGGESTION_LIMIT): st
 export async function generateDocumentSuggestionsWithAI(
   kind: DocumentSuggestionKind,
   context: string,
-  activeRefs: Reference[] = [],
 ): Promise<string[]> {
   const trimmed = context.trim()
   const localFallback = () => buildSuggestionsFromText(kind, trimmed)
@@ -330,10 +300,11 @@ export async function generateDocumentSuggestionsWithAI(
   if (!trimmed) return localFallback()
 
   try {
-    const raw = await queryWithReferences(
-      `Documento:${buildContextBlock(trimmed)}`,
-      activeRefs,
-      SUGGESTION_PROMPTS[kind],
+    const raw = await callOpenAI(
+      [
+        { role: 'system', content: SUGGESTION_PROMPTS[kind] },
+        { role: 'user', content: `Documento:${buildContextBlock(trimmed)}` },
+      ],
       { json: true, maxTokens: 420 },
     )
 

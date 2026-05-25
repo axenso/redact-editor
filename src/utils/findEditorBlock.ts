@@ -92,17 +92,55 @@ export function resolveGutterAtPoint(
   const coords = editor.view.posAtCoords({ left: clientX, top: clientY })
   if (!coords) return null
 
-  const block = findBlockAtPos(editor, coords.pos)
+  return resolveGutterAtDocPos(editor, shell, coords.pos)
+}
+
+function resolveGutterAtDocPos(
+  editor: Editor,
+  shell: HTMLElement,
+  pos: number,
+): GutterPosition | null {
+  const block = findBlockAtPos(editor, pos)
   if (!block) return null
 
   const blockDom = editor.view.nodeDOM(block.pos)
   if (!(blockDom instanceof HTMLElement)) return null
 
+  const shellRect = shell.getBoundingClientRect()
   const blockRect = blockDom.getBoundingClientRect()
   return {
     top: blockRect.top - shellRect.top + 2,
     blockPos: block.pos,
   }
+}
+
+export function resolveGutterForBlockPos(
+  editor: Editor,
+  shell: HTMLElement,
+  blockPos: number,
+): GutterPosition | null {
+  return resolveGutterAtDocPos(editor, shell, blockPos + 1)
+}
+
+export function resolveGutterFromSelection(
+  editor: Editor,
+  shell: HTMLElement,
+): GutterPosition | null {
+  const { from, to } = editor.state.selection
+  if (from === to || editor.isActive('codeBlock')) return null
+
+  return resolveGutterAtDocPos(editor, shell, from)
+}
+
+/** Gutter sul blocco del cursore, anche con selezione collassata (riga vuota). */
+export function resolveGutterFromFocus(
+  editor: Editor,
+  shell: HTMLElement,
+): GutterPosition | null {
+  if (editor.isActive('codeBlock') || !editor.view.hasFocus()) return null
+
+  const { from } = editor.state.selection
+  return resolveGutterAtDocPos(editor, shell, from)
 }
 
 export function focusBlockStart(editor: Editor, blockPos: number): boolean {

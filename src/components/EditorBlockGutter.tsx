@@ -6,21 +6,13 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import {
-  Code,
   GripVertical,
-  Image,
-  List,
-  ListOrdered,
-  Minus,
   Plus,
-  Quote,
-  Table,
 } from 'lucide-react'
 import type { Editor } from '@tiptap/react'
 import { AppIcon } from './LucideIcon'
 import {
   EditorInsertMenuPanel,
-  type EditorInsertMenuGroup,
 } from './EditorInsertMenuPanel'
 import {
   focusBlockEnd,
@@ -28,8 +20,13 @@ import {
   getBlockDropTarget,
   resolveDraggableBlock,
   resolveGutterAtPoint,
+  resolveGutterForBlockPos,
+  resolveGutterFromFocus,
   type GutterPosition,
 } from '../utils/findEditorBlock'
+import {
+  buildBlockInsertMenuGroups,
+} from '../utils/editorInsertMenuGroups'
 import { moveEditorBlock } from '../utils/moveEditorBlock'
 
 interface EditorBlockGutterProps {
@@ -55,7 +52,9 @@ export function EditorBlockGutter({
     blockPos: number
     pointerId: number
   } | null>(null)
+  const hoverGutterPosRef = useRef<GutterPosition | null>(null)
   const [hoverGutterPos, setHoverGutterPos] = useState<GutterPosition | null>(null)
+  const [focusGutterPos, setFocusGutterPos] = useState<GutterPosition | null>(null)
   const [menuAnchor, setMenuAnchor] = useState<GutterPosition | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
@@ -66,9 +65,65 @@ export function EditorBlockGutter({
     setMenuAnchor(null)
   }, [])
 
+  const updateHoverGutterPos = useCallback((next: GutterPosition | null) => {
+    hoverGutterPosRef.current = next
+    setHoverGutterPos(next)
+  }, [])
+
+  const refreshHoverGutterPos = useCallback(() => {
+    const shell = shellRef.current
+    const current = hoverGutterPosRef.current
+    if (!shell || !current) return
+
+    const updated = resolveGutterForBlockPos(editor, shell, current.blockPos)
+    if (updated) updateHoverGutterPos(updated)
+  }, [editor, updateHoverGutterPos])
+
+  const syncFocusGutter = useCallback(() => {
+    const shell = shellRef.current
+    if (!shell || !enabled) {
+      setFocusGutterPos(null)
+      return
+    }
+
+    setFocusGutterPos(resolveGutterFromFocus(editor, shell))
+  }, [editor, enabled])
+
+  const syncMenuAnchorToFocus = useCallback(() => {
+    const shell = shellRef.current
+    if (!shell) return
+
+    const next = resolveGutterFromFocus(editor, shell)
+    if (!next) return
+
+    updateHoverGutterPos(next)
+    setMenuAnchor(next)
+    setMenuOpen(true)
+  }, [editor, updateHoverGutterPos])
+
+  const keepMenuOpenAfterCommand = useCallback(() => {
+    if (!menuOpen) {
+      closeMenu()
+      return
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(syncMenuAnchorToFocus)
+    })
+  }, [menuOpen, closeMenu, syncMenuAnchorToFocus])
+
   const syncHoveredBlock = useCallback(
     (clientX: number, clientY: number) => {
       if (!enabled || !shellRef.current || menuOpen) return
+
+      const target = document.elementFromPoint(clientX, clientY)
+      if (
+        target?.closest('.editor-block-gutter') ||
+        target?.closest('.editor-block-gutter-menu')
+      ) {
+        refreshHoverGutterPos()
+        return
+      }
 
       const next = resolveGutterAtPoint(
         editor,
@@ -77,13 +132,20 @@ export function EditorBlockGutter({
         clientY,
       )
       if (!next) {
-        if (!dragRef.current) setHoverGutterPos(null)
+        if (!dragRef.current && !focusGutterPos) updateHoverGutterPos(null)
         return
       }
 
-      setHoverGutterPos(next)
+      updateHoverGutterPos(next)
     },
-    [editor, enabled, menuOpen],
+    [
+      editor,
+      enabled,
+      menuOpen,
+      focusGutterPos,
+      refreshHoverGutterPos,
+      updateHoverGutterPos,
+    ],
   )
 
   const handleDragMove = useCallback(
@@ -133,7 +195,9 @@ export function EditorBlockGutter({
 
   const handleHandlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
-      const anchor = menuOpen ? menuAnchor : hoverGutterPos
+      const anchor = menuOpen
+        ? menuAnchor
+        : (focusGutterPos ?? hoverGutterPos)
       if (!anchor) return
 
       const draggable = resolveDraggableBlock(editor, anchor.blockPos)
@@ -150,7 +214,7 @@ export function EditorBlockGutter({
       setIsDragging(true)
       event.currentTarget.setPointerCapture(event.pointerId)
     },
-    [editor, menuOpen, menuAnchor, hoverGutterPos, closeMenu],
+    [editor, menuOpen, menuAnchor, hoverGutterPos, focusGutterPos, closeMenu],
   )
 
   const handleHandlePointerMove = useCallback(
@@ -198,7 +262,8 @@ export function EditorBlockGutter({
 
   useEffect(() => {
     if (!enabled) {
-      setHoverGutterPos(null)
+      updateHoverGutterPos(null)
+      setFocusGutterPos(null)
       setMenuAnchor(null)
       setMenuOpen(false)
       setIsDragging(false)
@@ -212,7 +277,9 @@ export function EditorBlockGutter({
     }
 
     const onMouseLeave = () => {
-      if (!menuOpen && !dragRef.current) setHoverGutterPos(null)
+      if (!menuOpen && !dragRef.current && !focusGutterPos) {
+        updateHoverGutterPos(null)
+      }
     }
 
     window.addEventListener('mousemove', onMouseMove)
@@ -222,7 +289,65 @@ export function EditorBlockGutter({
       window.removeEventListener('mousemove', onMouseMove)
       shellRef.current?.removeEventListener('mouseleave', onMouseLeave)
     }
-  }, [enabled, menuOpen, syncHoveredBlock])
+  }, [enabled, menuOpen, focusGutterPos, syncHoveredBlock, updateHoverGutterPos])
+
+  useEffect(() => {
+    if (!enabled || !hoverGutterPos) return
+
+    const sync = () => refreshHoverGutterPos()
+
+    window.addEventListener('scroll', sync, true)
+    window.addEventListener('resize', sync)
+
+    return () => {
+      window.removeEventListener('scroll', sync, true)
+      window.removeEventListener('resize', sync)
+    }
+  }, [enabled, hoverGutterPos, refreshHoverGutterPos])
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const sync = () => syncFocusGutter()
+
+    sync()
+    editor.on('selectionUpdate', sync)
+    editor.on('transaction', sync)
+    window.addEventListener('scroll', sync, true)
+    window.addEventListener('resize', sync)
+
+    return () => {
+      editor.off('selectionUpdate', sync)
+      editor.off('transaction', sync)
+      window.removeEventListener('scroll', sync, true)
+      window.removeEventListener('resize', sync)
+    }
+  }, [editor, enabled, syncFocusGutter])
+
+  useEffect(() => {
+    if (!enabled || !menuOpen) return
+
+    const syncMenuAnchor = () => {
+      const shell = shellRef.current
+      if (!shell) return
+
+      const next = resolveGutterFromFocus(editor, shell)
+      if (next) setMenuAnchor(next)
+    }
+
+    syncMenuAnchor()
+    editor.on('selectionUpdate', syncMenuAnchor)
+    editor.on('transaction', syncMenuAnchor)
+    window.addEventListener('scroll', syncMenuAnchor, true)
+    window.addEventListener('resize', syncMenuAnchor)
+
+    return () => {
+      editor.off('selectionUpdate', syncMenuAnchor)
+      editor.off('transaction', syncMenuAnchor)
+      window.removeEventListener('scroll', syncMenuAnchor, true)
+      window.removeEventListener('resize', syncMenuAnchor)
+    }
+  }, [editor, enabled, menuOpen])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -248,122 +373,69 @@ export function EditorBlockGutter({
     }
   }, [menuOpen, closeMenu])
 
-  const activeBlockPos = menuOpen ? menuAnchor : hoverGutterPos
+  const activeBlockPos = menuOpen
+    ? menuAnchor
+    : (focusGutterPos ?? hoverGutterPos)
 
   const runAtBlock = useCallback(
     (command: (ed: Editor) => void) => {
-      if (!activeBlockPos) return
-      const block = editor.state.doc.nodeAt(activeBlockPos.blockPos)
+      const blockPos = menuOpen ? menuAnchor?.blockPos : activeBlockPos?.blockPos
+      if (blockPos == null) return
+
+      const block = editor.state.doc.nodeAt(blockPos)
       if (!block) return
 
-      focusBlockStart(editor, activeBlockPos.blockPos)
+      focusBlockStart(editor, blockPos)
       command(editor)
-      closeMenu()
+      keepMenuOpenAfterCommand()
     },
-    [editor, activeBlockPos, closeMenu],
+    [editor, menuOpen, menuAnchor, activeBlockPos, keepMenuOpenAfterCommand],
   )
 
   const runAfterBlock = useCallback(
-    (command: () => void) => {
-      if (!activeBlockPos) return
-      const block = editor.state.doc.nodeAt(activeBlockPos.blockPos)
+    (command: () => void, closeAfter = false) => {
+      const blockPos = menuOpen ? menuAnchor?.blockPos : activeBlockPos?.blockPos
+      if (blockPos == null) return
+
+      const block = editor.state.doc.nodeAt(blockPos)
       if (!block) return
 
-      focusBlockEnd(editor, activeBlockPos.blockPos, block)
+      focusBlockEnd(editor, blockPos, block)
       command()
-      closeMenu()
+
+      if (closeAfter) {
+        closeMenu()
+        return
+      }
+
+      keepMenuOpenAfterCommand()
     },
-    [editor, activeBlockPos, closeMenu],
+    [
+      editor,
+      menuOpen,
+      menuAnchor,
+      activeBlockPos,
+      closeMenu,
+      keepMenuOpenAfterCommand,
+    ],
   )
 
-  const menuGroups: EditorInsertMenuGroup[] = [
-    {
-      label: 'Lists',
-      items: [
-        {
-          id: 'bullet-list',
-          label: 'Unordered List',
-          icon: List,
-          onSelect: () =>
-            runAtBlock((ed) => ed.chain().focus().toggleBulletList().run()),
-        },
-        {
-          id: 'ordered-list',
-          label: 'Ordered List',
-          icon: ListOrdered,
-          onSelect: () =>
-            runAtBlock((ed) => ed.chain().focus().toggleOrderedList().run()),
-        },
-      ],
-    },
-    {
-      label: 'Blocks',
-      items: [
-        {
-          id: 'code',
-          label: 'Code',
-          icon: Code,
-          onSelect: () =>
-            runAtBlock((ed) => ed.chain().focus().toggleCodeBlock().run()),
-        },
-        {
-          id: 'media',
-          label: 'Media Block',
-          icon: Image,
-          onSelect: () => {
-            if (!onInsertImage) return
-            runAfterBlock(onInsertImage)
-          },
-        },
-        {
-          id: 'table',
-          label: 'Table',
-          icon: Table,
-          onSelect: () => {
-            if (!onInsertTable) return
-            runAfterBlock(onInsertTable)
-          },
-        },
-      ],
-    },
-    {
-      label: 'Basic',
-      items: [
-        {
-          id: 'upload',
-          label: 'Upload',
-          icon: Image,
-          onSelect: () => {
-            if (!onInsertImage) return
-            runAfterBlock(onInsertImage)
-          },
-        },
-        {
-          id: 'blockquote',
-          label: 'Blockquote',
-          icon: Quote,
-          onSelect: () =>
-            runAtBlock((ed) => ed.chain().focus().toggleBlockquote().run()),
-        },
-        {
-          id: 'hr',
-          label: 'Horizontal Rule',
-          icon: Minus,
-          onSelect: () =>
-            runAtBlock((ed) => ed.chain().focus().setHorizontalRule().run()),
-        },
-      ],
-    },
-  ]
+  const menuGroups = buildBlockInsertMenuGroups({
+    runAtBlock,
+    runAfterBlock,
+    onInsertImage,
+    onInsertTable,
+  })
 
   if (!enabled) return null
 
-  const gutterPos = menuOpen ? menuAnchor : hoverGutterPos
+  const gutterPos = menuOpen ? menuAnchor : (focusGutterPos ?? hoverGutterPos)
+  const isGutterActive = Boolean(gutterPos && !menuOpen)
 
   return (
     <div
       ref={shellRef}
-      className={`editor-block-gutter-shell${isDragging ? ' editor-block-gutter-shell-dragging' : ''}${menuOpen ? ' editor-block-gutter-shell-menu-open' : ''}`}
+      className={`editor-block-gutter-shell${isDragging ? ' editor-block-gutter-shell-dragging' : ''}${menuOpen ? ' editor-block-gutter-shell-menu-open' : ''}${isGutterActive ? ' editor-block-gutter-shell-active' : ''}`}
       aria-hidden={!gutterPos && !dropIndicator && !menuOpen}
     >
       {dropIndicator && (
@@ -375,7 +447,7 @@ export function EditorBlockGutter({
 
       {gutterPos && (
         <div
-          className={`editor-block-gutter${isDragging ? ' editor-block-gutter-active' : ''}`}
+          className={`editor-block-gutter${isDragging ? ' editor-block-gutter-active' : ''}${isGutterActive ? ' editor-block-gutter-visible' : ''}`}
           style={{ top: gutterPos.top }}
         >
           <button
@@ -401,8 +473,8 @@ export function EditorBlockGutter({
                 closeMenu()
                 return
               }
-              if (!hoverGutterPos) return
-              setMenuAnchor(hoverGutterPos)
+              if (!hoverGutterPos && !focusGutterPos) return
+              setMenuAnchor(focusGutterPos ?? hoverGutterPos)
               setMenuOpen(true)
             }}
           >
