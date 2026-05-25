@@ -369,14 +369,15 @@
 .export-menu-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.75rem;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1;
 }
 
 .export-menu-trigger:hover {
@@ -385,8 +386,20 @@
   background: var(--primary-soft);
 }
 
-.export-menu-chevron {
-  color: var(--text-subtle);
+.export-menu-trigger.active {
+  border-color: var(--primary-border);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.export-menu-icon--spin {
+  animation: export-menu-icon-spin 0.75s linear infinite;
+}
+
+@keyframes export-menu-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .export-menu-dropdown {

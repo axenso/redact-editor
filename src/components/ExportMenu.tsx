@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { Download, Loader2 } from 'lucide-react'
 import type { PageLayout } from '../constants/pageFormat'
 import { exportEditorContent, type ExportFormat } from '../utils/exportContent'
 import { AppIcon } from './LucideIcon'
@@ -67,14 +67,21 @@ export function ExportMenu({
     <div className="export-menu" ref={rootRef}>
       <button
         type="button"
-        className="export-menu-trigger btn-with-icon"
+        className={
+          open ? 'export-menu-trigger active' : 'export-menu-trigger'
+        }
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={exporting ? 'Esportazione in corso' : 'Esporta documento'}
+        title={exporting ? 'Esportazione in corso…' : 'Esporta documento'}
         disabled={exporting}
         onClick={() => setOpen((wasOpen) => !wasOpen)}
       >
-        {exporting ? 'Esportazione…' : 'Esporta'}
-        <AppIcon icon={ChevronDown} size="xs" className="export-menu-chevron" />
+        <AppIcon
+          icon={exporting ? Loader2 : Download}
+          size="sm"
+          className={exporting ? 'export-menu-icon export-menu-icon--spin' : 'export-menu-icon'}
+        />
       </button>
 
       {error && (
