@@ -1,0 +1,1018 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getPageFormatLabel, getPageLayout } from '../constants/pageFormat'
+import type { PageFormatId, PageOrientation } from '../constants/pageFormat'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import TextAlign from '@tiptap/extension-text-align'
+import { Color } from '@tiptap/extension-color'
+import { TextStyle } from '@tiptap/extension-text-style'
+import Underline from '@tiptap/extension-underline'
+import { Table } from '@tiptap/extension-table'
+import { TableRow } from '@tiptap/extension-table-row'
+import { TableCell } from '@tiptap/extension-table-cell'
+import { TableHeader } from '@tiptap/extension-table-header'
+import { DiffAdded, DiffRemoved } from '../extensions/DiffMarks'
+import { FontFamily } from '../extensions/FontFamily'
+import { FontSize } from '../extensions/FontSize'
+import { LineHeight } from '../extensions/LineHeight'
+import {
+  ChartBlock,
+  type ChartBlockAttrs,
+  type ChartBlockStorage,
+} from '../extensions/ChartBlock'
+import {
+  ImageBlock,
+  type ImageBlockAttrs,
+  type ImageBlockStorage,
+} from '../extensions/ImageBlock'
+import { AppShell } from './AppShell'
+import { Toolbar } from './Toolbar'
+import { SelectionBubbleMenu } from './SelectionBubbleMenu'
+import { EditorBlockGutter } from './EditorBlockGutter'
+import { SelectionContextMenu } from './SelectionContextMenu'
+import { AiMenuModeToggle } from './AiMenuModeToggle'
+import { AiPromptModal } from './AiPromptModal'
+import { EditorMetaFooter } from './EditorMetaFooter'
+import { HistoryRestoreActions } from './HistoryRestoreActions'
+import { HistorySidebar } from './HistorySidebar'
+import { ExportMenu } from './ExportMenu'
+import { PageFormatSelect } from './PageFormatSelect'
+import { ImageEditorModal } from './ImageEditorModal'
+import { ChartEditorModal } from './ChartEditorModal'
+import {
+  generateTableWithAI,
+  generateChartWithAI,
+  modifyTextWithAI,
+} from '../services/aiService'
+import {
+  applyTableDataAtSelection,
+  insertAiTable,
+  updateAiTableAt,
+} from '../utils/insertAiTable'
+import {
+  parseTableFromAiResponse,
+  tableDataToPlainText,
+  wantsTableOutput,
+} from '../utils/parseMarkdownTable'
+import { getSelectedTextFromRange } from '../utils/selectionText'
+import { normalizeTableHtml } from '../utils/normalizeTableHtml'
+import { TableHoverControls } from './TableHoverControls'
+import { AiGenerateModal } from './AiGenerateModal'
+import type { AiGenerateKind } from './AiGenerateForm'
+import { TableInsertModal } from './TableInsertModal'
+import type { InsertModalTab } from './ModalInsertTabs'
+import { ReferencePanel } from './ReferencePanel'
+import { useAutosave } from '../hooks/useAutosave'
+import { useEditHistory } from '../hooks/useEditHistory'
+import { useReferences } from '../hooks/useReferences'
+import { docHasDiffMarks, useInlineDiff } from '../hooks/useInlineDiff'
+import { restoreEditorContent } from '../utils/restoreEditorContent'
+import { scrollEditorToHistoryChange } from '../utils/historyScrollTarget'
+import {
+  canRestoreFirstVersion,
+  canRestoreLatestVersion,
+  getFirstVersionContent,
+  getLatestVersionEntry,
+} from '../utils/getRestorableEntry'
+import { stripDiffMarksFromHtml } from '../utils/sanitizeHtml'
+import type { EditHistoryEntry } from '../types/editHistory'
+import {
+  DEFAULT_CONTENT,
+  loadAiMenuMode,
+  loadContent,
+  loadPageFormat,
+  loadPageOrientation,
+  saveAiMenuMode,
+  savePageFormat,
+  savePageOrientation,
+  type AiMenuMode,
+} from '../hooks/useLocalStorage'
+
+interface SelectionRange {
+  from: number
+  to: number
+}
+
+const initialEditorHtml = normalizeTableHtml(loadContent() ?? DEFAULT_CONTENT)
+
+export function RichTextEditor() {
+  const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [selectedText, setSelectedText] = useState('')
+  const [selectionRange, setSelectionRange] = useState<SelectionRange | null>(
+    null,
+  )
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [aiMenuMode, setAiMenuMode] = useState<AiMenuMode>(loadAiMenuMode)
+  const [pageFormatId, setPageFormatId] = useState<PageFormatId>(loadPageFormat)
+  const [pageOrientation, setPageOrientation] =
+    useState<PageOrientation>(loadPageOrientation)
+  const [hasTextSelection, setHasTextSelection] = useState(false)
+  const [isInTable, setIsInTable] = useState(false)
+  const [correctionsEntryId, setCorrectionsEntryId] = useState<string | null>(
+    null,
+  )
+  const [imageModalOpen, setImageModalOpen] = useState(false)
+  const [imageModalMode, setImageModalMode] = useState<'insert' | 'edit'>(
+    'insert',
+  )
+  const [imageEditPos, setImageEditPos] = useState<number | null>(null)
+  const [imageEditAttrs, setImageEditAttrs] = useState<ImageBlockAttrs | null>(
+    null,
+  )
+  const [tableModalOpen, setTableModalOpen] = useState(false)
+  const [tableInsertTab, setTableInsertTab] = useState<InsertModalTab>('manual')
+  const [chartModalOpen, setChartModalOpen] = useState(false)
+  const [chartInsertTab, setChartInsertTab] = useState<InsertModalTab>('manual')
+  const [chartModalMode, setChartModalMode] = useState<'insert' | 'edit'>(
+    'insert',
+  )
+  const [chartEditPos, setChartEditPos] = useState<number | null>(null)
+  const [chartEditAttrs, setChartEditAttrs] = useState<ChartBlockAttrs | null>(
+    null,
+  )
+  const [aiGenerateKind, setAiGenerateKind] = useState<AiGenerateKind | null>(
+    null,
+  )
+  const [aiGenerateTarget, setAiGenerateTarget] = useState<{
+    chartPos?: number
+    tablePos?: number
+  } | null>(null)
+  const [aiGenerateLoading, setAiGenerateLoading] = useState(false)
+  const [aiGenerateError, setAiGenerateError] = useState<string | null>(null)
+  const [referencePanelOpen, setReferencePanelOpen] = useState(false)
+  const { status, lastSavedAt, documentMeta, scheduleSave, saveNow, flushPending } =
+    useAutosave()
+  const {
+    entries: historyEntries,
+    activeId: activeHistoryId,
+    saveError: historySaveError,
+    recordAppliedEdit,
+    setHistoryBaseline,
+    pauseHistoryRecording,
+    resumeHistoryRecording,
+    getLatestEntry,
+    getPreviousContent,
+    setActiveEntry,
+    syncActiveEntry,
+    clearHistory,
+  } = useEditHistory(initialEditorHtml)
+  const syncActiveEntryRef = useRef(syncActiveEntry)
+  syncActiveEntryRef.current = syncActiveEntry
+  const pauseHistoryRecordingRef = useRef(pauseHistoryRecording)
+  pauseHistoryRecordingRef.current = pauseHistoryRecording
+  const resumeHistoryRecordingRef = useRef(resumeHistoryRecording)
+  resumeHistoryRecordingRef.current = resumeHistoryRecording
+  const setHistoryBaselineRef = useRef(setHistoryBaseline)
+  setHistoryBaselineRef.current = setHistoryBaseline
+  const {
+    clearAllDiffMarks,
+    finalizeDiff,
+    showDiffInDocument,
+    shouldFinalizeOnEdit,
+  } = useInlineDiff()
+  const {
+    references,
+    activeRefs,
+    addReference,
+    toggleReference,
+    removeReference,
+    activeCount,
+    activeTokenEstimate,
+    isOverTokenLimit,
+  } = useReferences()
+
+  const handleAiMenuModeChange = useCallback((mode: AiMenuMode) => {
+    setAiMenuMode(mode)
+    saveAiMenuMode(mode)
+  }, [])
+
+  const handlePageFormatChange = useCallback((format: PageFormatId) => {
+    setPageFormatId(format)
+    savePageFormat(format)
+  }, [])
+
+  const handlePageOrientationChange = useCallback(
+    (orientation: PageOrientation) => {
+      setPageOrientation(orientation)
+      savePageOrientation(orientation)
+    },
+    [],
+  )
+
+  const pageLayout = useMemo(
+    () => getPageLayout(pageFormatId, pageOrientation),
+    [pageFormatId, pageOrientation],
+  )
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Underline,
+      TextStyle,
+      FontFamily,
+      FontSize,
+      Color,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      LineHeight,
+      ImageBlock,
+      Table.configure({
+        resizable: true,
+        renderWrapper: true,
+        allowTableNodeSelection: true,
+        HTMLAttributes: { class: 'editor-table' },
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      ChartBlock,
+      DiffAdded,
+      DiffRemoved,
+    ],
+    content: initialEditorHtml,
+    onCreate: ({ editor: ed }) => {
+      ed.commands.fixTables()
+    },
+    onUpdate: ({ editor: ed, transaction }) => {
+      if (transaction.docChanged && shouldFinalizeOnEdit(ed)) {
+        finalizeDiff(ed)
+      }
+      if (!docHasDiffMarks(ed) && transaction.docChanged) {
+        const html = ed.getHTML()
+        scheduleSave(html)
+        syncActiveEntryRef.current(html)
+      }
+    },
+    onSelectionUpdate: ({ editor: ed }) => {
+      const { from, to } = ed.state.selection
+      setHasTextSelection(from !== to && !ed.isActive('codeBlock'))
+      setIsInTable(ed.isActive('table'))
+    },
+    editorProps: {
+      attributes: {
+        class: 'tiptap-editor',
+      },
+    },
+  })
+
+  useEffect(() => {
+    return () => {
+      flushPending()
+    }
+  }, [flushPending])
+
+  const loadVersion = useCallback(
+    (entry: EditHistoryEntry) => {
+      if (!editor) return
+      pauseHistoryRecordingRef.current()
+      const cleanHtml = stripDiffMarksFromHtml(entry.contentHtml)
+      restoreEditorContent(editor, cleanHtml, clearAllDiffMarks, {
+        preserveScroll: false,
+      })
+      saveNow(cleanHtml)
+      setActiveEntry(entry.id)
+      setHistoryBaselineRef.current(cleanHtml)
+      resumeHistoryRecordingRef.current()
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollEditorToHistoryChange(editor, entry)
+        })
+      })
+    },
+    [editor, setActiveEntry, clearAllDiffMarks, saveNow],
+  )
+
+  const handleRestoreHistory = useCallback(
+    (entry: EditHistoryEntry) => {
+      setCorrectionsEntryId(null)
+      loadVersion(entry)
+    },
+    [loadVersion],
+  )
+
+  const handleToggleCorrections = useCallback(
+    (entry: EditHistoryEntry) => {
+      if (!editor) return
+
+      if (correctionsEntryId === entry.id) {
+        clearAllDiffMarks(editor, false)
+        setCorrectionsEntryId(null)
+        loadVersion(entry)
+        return
+      }
+
+      setCorrectionsEntryId(entry.id)
+      loadVersion(entry)
+
+      if (entry.selectionBefore && entry.selectionAfter) {
+        requestAnimationFrame(() => {
+          showDiffInDocument(
+            editor,
+            entry.selectionBefore!,
+            entry.selectionAfter!,
+          )
+          requestAnimationFrame(() => {
+            scrollEditorToHistoryChange(editor, entry)
+          })
+        })
+      }
+    },
+    [
+      editor,
+      correctionsEntryId,
+      loadVersion,
+      clearAllDiffMarks,
+      showDiffInDocument,
+    ],
+  )
+
+  const handleRestorePrevious = useCallback(
+    (entry?: EditHistoryEntry) => {
+      if (!editor) return
+
+      const target = entry ?? getLatestEntry()
+      const previousHtml = target
+        ? getPreviousContent(target.id)
+        : getPreviousContent()
+
+      if (!previousHtml) return
+
+      const entryIndex = historyEntries.findIndex((e) => e.id === target?.id)
+      const priorEntryId =
+        entryIndex >= 0 ? (historyEntries[entryIndex + 1]?.id ?? null) : null
+
+      setCorrectionsEntryId(null)
+      pauseHistoryRecordingRef.current()
+      restoreEditorContent(
+        editor,
+        stripDiffMarksFromHtml(previousHtml),
+        clearAllDiffMarks,
+      )
+      saveNow(stripDiffMarksFromHtml(previousHtml))
+      setActiveEntry(priorEntryId)
+      setHistoryBaselineRef.current(stripDiffMarksFromHtml(previousHtml))
+      resumeHistoryRecordingRef.current()
+    },
+    [
+      editor,
+      getLatestEntry,
+      getPreviousContent,
+      historyEntries,
+      setActiveEntry,
+      clearAllDiffMarks,
+      saveNow,
+    ],
+  )
+
+  const handleRestoreOriginal = useCallback(() => {
+    if (!editor) return
+
+    const firstHtml = getFirstVersionContent(historyEntries)
+    if (!firstHtml) return
+
+    setCorrectionsEntryId(null)
+    pauseHistoryRecordingRef.current()
+    const cleanHtml = stripDiffMarksFromHtml(firstHtml)
+    restoreEditorContent(editor, cleanHtml, clearAllDiffMarks, {
+      preserveScroll: false,
+    })
+    saveNow(cleanHtml)
+    syncActiveEntry(cleanHtml)
+    setHistoryBaselineRef.current(cleanHtml)
+    resumeHistoryRecordingRef.current()
+  }, [editor, historyEntries, syncActiveEntry, clearAllDiffMarks, saveNow])
+
+  const handleRestoreLatest = useCallback(() => {
+    const latest = getLatestVersionEntry(historyEntries)
+    if (!latest) return
+
+    setCorrectionsEntryId(null)
+    loadVersion(latest)
+  }, [historyEntries, loadVersion])
+
+  const handleClearHistory = useCallback(() => {
+    clearHistory()
+  }, [clearHistory])
+
+  const openImageInsertModal = useCallback(() => {
+    setImageModalMode('insert')
+    setImageEditPos(null)
+    setImageEditAttrs(null)
+    setImageModalOpen(true)
+  }, [])
+
+  const handleSaveImage = useCallback(
+    (attrs: ImageBlockAttrs) => {
+      if (!editor) return
+
+      if (imageModalMode === 'edit' && imageEditPos !== null) {
+        editor.chain().focus().updateImageBlockAt(imageEditPos, attrs).run()
+      } else {
+        editor.chain().focus().insertImageBlock(attrs).run()
+      }
+
+      setImageEditPos(null)
+      setImageEditAttrs(null)
+    },
+    [editor, imageModalMode, imageEditPos],
+  )
+
+  const openChartInsertModal = useCallback((tab: InsertModalTab = 'manual') => {
+    setChartInsertTab(tab)
+    setChartModalMode('insert')
+    setChartEditPos(null)
+    setChartEditAttrs(null)
+    setAiGenerateError(null)
+    setChartModalOpen(true)
+  }, [])
+
+  const openTableInsertModal = useCallback((tab: InsertModalTab = 'manual') => {
+    setTableInsertTab(tab)
+    setAiGenerateError(null)
+    setTableModalOpen(true)
+  }, [])
+
+  const handleInsertManualTable = useCallback(
+    (rows: number, cols: number) => {
+      if (!editor) return
+      editor
+        .chain()
+        .focus()
+        .insertTable({ rows, cols, withHeaderRow: true })
+        .run()
+    },
+    [editor],
+  )
+
+  const handleSaveChart = useCallback(
+    (attrs: ChartBlockAttrs) => {
+      if (!editor) return
+
+      if (chartModalMode === 'edit' && chartEditPos !== null) {
+        editor.chain().focus().updateChartAt(chartEditPos, attrs).run()
+      } else {
+        editor.chain().focus().insertChart(attrs).run()
+      }
+
+      setChartModalOpen(false)
+      setChartEditPos(null)
+      setChartEditAttrs(null)
+    },
+    [editor, chartModalMode, chartEditPos],
+  )
+
+  const openAiGenerate = useCallback(
+    (
+      kind: AiGenerateKind,
+      target?: { chartPos?: number; tablePos?: number },
+    ) => {
+      setAiGenerateError(null)
+      setAiGenerateTarget(target ?? null)
+      setAiGenerateKind(kind)
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!editor) return
+
+    const storage = editor.storage.imageBlock as ImageBlockStorage
+    storage.onEditImage = (pos, attrs) => {
+      setImageModalMode('edit')
+      setImageEditPos(pos)
+      setImageEditAttrs(attrs)
+      setImageModalOpen(true)
+    }
+
+    return () => {
+      storage.onEditImage = null
+    }
+  }, [editor])
+
+  useEffect(() => {
+    if (!editor) return
+
+    const storage = editor.storage.chartBlock as ChartBlockStorage
+    storage.onEditChart = (pos, attrs) => {
+      setChartModalMode('edit')
+      setChartEditPos(pos)
+      setChartEditAttrs(attrs)
+      setChartModalOpen(true)
+    }
+    storage.onAiGenerateChart = (pos) => {
+      openAiGenerate('chart', { chartPos: pos })
+    }
+
+    return () => {
+      storage.onEditChart = null
+      storage.onAiGenerateChart = null
+    }
+  }, [editor, openAiGenerate])
+
+  const getDocumentContext = useCallback(() => {
+    if (!editor) return ''
+    return editor.state.doc
+      .textBetween(0, editor.state.doc.content.size, '\n', '\n')
+      .trim()
+      .slice(0, 2500)
+  }, [editor])
+
+  const runAiGenerate = useCallback(
+    async (
+      kind: AiGenerateKind,
+      instruction: string,
+      target?: { chartPos?: number; tablePos?: number } | null,
+      onSuccess?: () => void,
+    ) => {
+      if (!editor) return
+
+      setAiGenerateLoading(true)
+      setAiGenerateError(null)
+
+      try {
+        const context = getDocumentContext()
+
+        if (kind === 'chart') {
+          let existingChart: ChartBlockAttrs | undefined
+          if (target?.chartPos != null) {
+            const node = editor.state.doc.nodeAt(target.chartPos)
+            if (node?.type.name === 'chartBlock') {
+              existingChart = node.attrs as ChartBlockAttrs
+            }
+          }
+
+          const chartAttrs = await generateChartWithAI({
+            instruction,
+            context,
+            activeRefs,
+            existingChart,
+          })
+          if (target?.chartPos != null) {
+            editor
+              .chain()
+              .focus()
+              .updateChartAt(target.chartPos, chartAttrs)
+              .run()
+          } else {
+            editor.chain().focus().insertChart(chartAttrs).run()
+          }
+        } else {
+          const tableData = await generateTableWithAI({
+            instruction,
+            context,
+            activeRefs,
+          })
+          const ok =
+            target?.tablePos != null
+              ? updateAiTableAt(editor, target.tablePos, tableData)
+              : insertAiTable(editor, tableData)
+          if (!ok) {
+            throw new Error(
+              target?.tablePos != null
+                ? 'Impossibile aggiornare la tabella nel documento.'
+                : 'Impossibile inserire la tabella nel documento.',
+            )
+          }
+        }
+
+        onSuccess?.()
+      } catch (err) {
+        setAiGenerateError(
+          err instanceof Error ? err.message : 'Errore durante la generazione',
+        )
+      } finally {
+        setAiGenerateLoading(false)
+      }
+    },
+    [editor, getDocumentContext, activeRefs],
+  )
+
+  const handleAiGenerateSubmit = useCallback(
+    async (instruction: string) => {
+      if (!aiGenerateKind) return
+
+      await runAiGenerate(aiGenerateKind, instruction, aiGenerateTarget, () => {
+        setAiGenerateKind(null)
+        setAiGenerateTarget(null)
+      })
+    },
+    [aiGenerateKind, aiGenerateTarget, runAiGenerate],
+  )
+
+  const handleChartModalAi = useCallback(
+    (instruction: string) => {
+      const target =
+        chartModalMode === 'edit' && chartEditPos !== null
+          ? { chartPos: chartEditPos }
+          : null
+
+      void runAiGenerate('chart', instruction, target, () => {
+        setChartModalOpen(false)
+        setChartEditPos(null)
+        setChartEditAttrs(null)
+      })
+    },
+    [chartModalMode, chartEditPos, runAiGenerate],
+  )
+
+  const handleTableInsertAi = useCallback(
+    (instruction: string) => {
+      void runAiGenerate('table', instruction, null, () => {
+        setTableModalOpen(false)
+      })
+    },
+    [runAiGenerate],
+  )
+
+  const handleOpenAiModal = useCallback(() => {
+    if (!editor) return
+
+    const { from, to } = editor.state.selection
+    if (from === to) return
+
+    const text = getSelectedTextFromRange(editor.state.doc, from, to)
+    setSelectionRange({ from, to })
+    setSelectedText(text)
+    setError(null)
+    setAiModalOpen(true)
+  }, [editor])
+
+  const captureSelectionForAi = useCallback(() => {
+    if (!editor) return null
+
+    const { from, to } = editor.state.selection
+    if (from === to) return null
+
+    const text = getSelectedTextFromRange(editor.state.doc, from, to)
+    setSelectionRange({ from, to })
+    setSelectedText(text)
+    setError(null)
+    return { from, to, text }
+  }, [editor])
+
+  const handleCloseAiModal = useCallback(() => {
+    if (isLoading) return
+    setAiModalOpen(false)
+    setError(null)
+  }, [isLoading])
+
+  const handleAiSubmit = useCallback(
+    async (
+      instruction: string,
+      selectionOverride?: { from: number; to: number; text: string },
+    ) => {
+      if (!editor) return
+
+      const from = selectionOverride?.from ?? selectionRange?.from
+      const to = selectionOverride?.to ?? selectionRange?.to
+      const currentSelectedText = selectionOverride?.text ?? selectedText
+
+      if (from == null || to == null) return
+
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        pauseHistoryRecordingRef.current()
+        const contentHtmlBefore = editor.getHTML()
+
+        const docSize = editor.state.doc.content.size
+        if (from < 0 || to > docSize || from >= to) {
+          throw new Error(
+            'Selezione non più valida. Seleziona di nuovo il testo e riprova.',
+          )
+        }
+
+        const selectedNow = getSelectedTextFromRange(editor.state.doc, from, to)
+        if (selectedNow !== currentSelectedText) {
+          throw new Error(
+            'Il documento è cambiato durante la richiesta AI. Ripeti la selezione.',
+          )
+        }
+
+        let tableData = null
+        let selectionAfter = ''
+        const tableRequested = wantsTableOutput(instruction)
+
+        if (tableRequested) {
+          tableData = parseTableFromAiResponse(currentSelectedText)
+        }
+
+        if (!tableData && tableRequested) {
+          tableData = await generateTableWithAI({
+            instruction,
+            context: currentSelectedText,
+            activeRefs,
+          })
+        }
+
+        if (!tableData) {
+          const modified = await modifyTextWithAI({
+            text: currentSelectedText,
+            instruction,
+            activeRefs,
+            inTable: editor.isActive('table'),
+            wantsTableOutput: tableRequested,
+          })
+
+          tableData = parseTableFromAiResponse(modified)
+
+          if (!tableData && tableRequested) {
+            tableData = await generateTableWithAI({
+              instruction,
+              context: `${currentSelectedText}\n\n${modified}`,
+              activeRefs,
+            })
+          }
+
+          if (tableData) {
+            selectionAfter = tableDataToPlainText(tableData)
+          } else {
+            selectionAfter = modified
+          }
+        } else {
+          selectionAfter = tableDataToPlainText(tableData)
+        }
+
+        if (tableData) {
+          if (!applyTableDataAtSelection(editor, from, to, tableData)) {
+            throw new Error('Impossibile inserire o aggiornare la tabella.')
+          }
+        } else if (!tableRequested) {
+          editor
+            .chain()
+            .focus()
+            .deleteRange({ from, to })
+            .insertContentAt(from, selectionAfter)
+            .run()
+        } else {
+          throw new Error(
+            'Impossibile convertire il testo in tabella. Prova a selezionare di nuovo il blocco.',
+          )
+        }
+
+        const contentHtml = editor.getHTML()
+        saveNow(contentHtml)
+        const savedEntry = recordAppliedEdit({
+          contentHtml,
+          contentHtmlBefore,
+          instruction,
+          selectionBefore: currentSelectedText,
+          selectionAfter,
+        })
+
+        if (savedEntry.error) {
+          setError(savedEntry.error)
+          return
+        }
+
+        setCorrectionsEntryId(null)
+        setAiModalOpen(false)
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Errore durante la modifica',
+        )
+      } finally {
+        resumeHistoryRecordingRef.current()
+        setIsLoading(false)
+      }
+    },
+    [
+      editor,
+      selectionRange,
+      selectedText,
+      recordAppliedEdit,
+      saveNow,
+      activeRefs,
+    ],
+  )
+
+  const handleAiQuickAction = useCallback(
+    (instruction: string) => {
+      const selection = captureSelectionForAi()
+      if (!selection) return
+      void handleAiSubmit(instruction, selection)
+    },
+    [captureSelectionForAi, handleAiSubmit],
+  )
+
+  if (!editor) {
+    return <div className="editor-loading">Caricamento editor…</div>
+  }
+
+  const currentEditorHtml = stripDiffMarksFromHtml(editor.getHTML())
+  const canRestoreOriginal = canRestoreFirstVersion(
+    historyEntries,
+    currentEditorHtml,
+  )
+  const canRestoreLatest = canRestoreLatestVersion(
+    historyEntries,
+    currentEditorHtml,
+    activeHistoryId,
+  )
+
+  return (
+    <AppShell
+      title="Il mio documento"
+      subtitle="Editor testuale con AI e storico versioni"
+      headerActions={
+        <>
+          <PageFormatSelect
+            formatId={pageFormatId}
+            orientation={pageOrientation}
+            onFormatChange={handlePageFormatChange}
+            onOrientationChange={handlePageOrientationChange}
+          />
+          <ExportMenu
+            getHtml={() => editor.getHTML()}
+            documentTitle="Il mio documento"
+            pageLayout={pageLayout}
+          />
+          <AiMenuModeToggle mode={aiMenuMode} onChange={handleAiMenuModeChange} />
+        </>
+      }
+      toolbar={
+        <Toolbar
+          editor={editor}
+          isInTable={isInTable}
+          onInsertImage={openImageInsertModal}
+          onInsertTable={() => openTableInsertModal()}
+          onInsertChart={() => openChartInsertModal()}
+        />
+      }
+      metaBar={
+        <HistoryRestoreActions
+          showRestoreLinks={historyEntries.length > 0}
+          canRestoreOriginal={canRestoreOriginal}
+          canRestoreLatest={canRestoreLatest}
+          onRestoreOriginal={handleRestoreOriginal}
+          onRestoreLatest={handleRestoreLatest}
+          autosaveStatus={status}
+          showAiButton={aiMenuMode === 'toolbar'}
+          hasTextSelection={hasTextSelection}
+          onAiClick={handleOpenAiModal}
+          onReferencesClick={() => setReferencePanelOpen(true)}
+          activeReferenceCount={activeCount}
+        />
+      }
+      sidebar={
+        <HistorySidebar
+          entries={historyEntries}
+          activeId={activeHistoryId}
+          saveError={historySaveError}
+          correctionsEntryId={correctionsEntryId}
+          onRestore={handleRestoreHistory}
+          onRestorePrevious={handleRestorePrevious}
+          onToggleCorrections={handleToggleCorrections}
+          onClear={handleClearHistory}
+        />
+      }
+    >
+      <div className="editor-shell">
+        <div
+          className="editor-canvas"
+          data-page-format={getPageFormatLabel(pageLayout)}
+        >
+          <div
+            className="editor-page"
+            style={{ minHeight: pageLayout.heightPx }}
+          >
+            <div
+              className={
+                aiMenuMode === 'bubble'
+                  ? 'editor-content-shell editor-content-shell--bubble'
+                  : 'editor-content-shell'
+              }
+            >
+              <EditorContent editor={editor} />
+              <EditorBlockGutter
+                editor={editor}
+                enabled={aiMenuMode === 'bubble'}
+                onInsertImage={openImageInsertModal}
+                onInsertTable={() => openTableInsertModal()}
+              />
+            </div>
+            <TableHoverControls
+              editor={editor}
+              onAiGenerateTable={(tablePos) =>
+                openAiGenerate('table', { tablePos })
+              }
+            />
+          </div>
+        </div>
+        <EditorMetaFooter
+          autosaveStatus={status}
+          lastSavedAt={lastSavedAt}
+          documentMeta={documentMeta}
+        />
+        <SelectionBubbleMenu
+          editor={editor}
+          enabled={aiMenuMode === 'bubble'}
+          onAiClick={handleOpenAiModal}
+          onAiQuickAction={handleAiQuickAction}
+        />
+        <SelectionContextMenu
+          editor={editor}
+          enabled={aiMenuMode === 'contextmenu'}
+          onAiClick={handleOpenAiModal}
+        />
+      </div>
+
+      <ReferencePanel
+        isOpen={referencePanelOpen}
+        references={references}
+        activeCount={activeCount}
+        activeTokenEstimate={activeTokenEstimate}
+        isOverTokenLimit={isOverTokenLimit}
+        onClose={() => setReferencePanelOpen(false)}
+        onToggle={toggleReference}
+        onRemove={removeReference}
+        onAdd={addReference}
+      />
+
+      <AiPromptModal
+        selectedText={selectedText}
+        isOpen={aiModalOpen}
+        isLoading={isLoading}
+        error={error}
+        onSubmit={handleAiSubmit}
+        onClose={handleCloseAiModal}
+      />
+
+      <ImageEditorModal
+        isOpen={imageModalOpen}
+        mode={imageModalMode}
+        initialAttrs={imageEditAttrs}
+        onClose={() => {
+          setImageModalOpen(false)
+          setImageEditPos(null)
+          setImageEditAttrs(null)
+        }}
+        onSave={handleSaveImage}
+      />
+
+      <TableInsertModal
+        isOpen={tableModalOpen}
+        initialTab={tableInsertTab}
+        documentContext={getDocumentContext()}
+        activeRefs={activeRefs}
+        aiLoading={aiGenerateLoading}
+        aiError={aiGenerateError}
+        onClose={() => {
+          if (aiGenerateLoading) return
+          setTableModalOpen(false)
+          setAiGenerateError(null)
+        }}
+        onInsertManual={handleInsertManualTable}
+        onAiGenerate={handleTableInsertAi}
+      />
+
+      {aiGenerateKind && (
+        <AiGenerateModal
+          kind={aiGenerateKind}
+          isOpen={aiGenerateKind !== null}
+          documentContext={getDocumentContext()}
+          activeRefs={activeRefs}
+          isLoading={aiGenerateLoading}
+          error={aiGenerateError}
+          mode={
+            aiGenerateTarget?.chartPos != null ||
+            aiGenerateTarget?.tablePos != null
+              ? 'regenerate'
+              : 'insert'
+          }
+          onSubmit={handleAiGenerateSubmit}
+          onClose={() => {
+            if (aiGenerateLoading) return
+            setAiGenerateKind(null)
+            setAiGenerateTarget(null)
+            setAiGenerateError(null)
+          }}
+        />
+      )}
+
+      <ChartEditorModal
+        isOpen={chartModalOpen}
+        mode={chartModalMode}
+        initialAttrs={chartEditAttrs}
+        initialTab={chartInsertTab}
+        documentContext={getDocumentContext()}
+        activeRefs={activeRefs}
+        aiLoading={aiGenerateLoading}
+        aiError={aiGenerateError}
+        onClose={() => {
+          if (aiGenerateLoading) return
+          setChartModalOpen(false)
+          setChartEditPos(null)
+          setChartEditAttrs(null)
+          setAiGenerateError(null)
+        }}
+        onSave={handleSaveChart}
+        onAiGenerate={handleChartModalAi}
+      />
+    </AppShell>
+  )
+}
