@@ -1,17 +1,20 @@
+import { forwardRef } from 'react'
+
 interface LatexEditorPaneProps {
   value: string
   onChange: (value: string) => void
 }
 
-export function LatexEditorPane({ value, onChange }: LatexEditorPaneProps) {
+export const LatexEditorPane = forwardRef<
+  HTMLTextAreaElement,
+  LatexEditorPaneProps
+>(function LatexEditorPane({ value, onChange }, ref) {
   return (
     <div className="latex-editor-pane">
-      {/* <label className="latex-editor-label" htmlFor="latex-editor-source">
-        Sorgente LaTeX
-      </label> */}
       <textarea
+        ref={ref}
         id="latex-editor-source"
-        className="latex-editor-textarea"
+        className="latex-editor-textarea source-editor-textarea"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
@@ -19,4 +22,4 @@ export function LatexEditorPane({ value, onChange }: LatexEditorPaneProps) {
       />
     </div>
   )
-}
+})

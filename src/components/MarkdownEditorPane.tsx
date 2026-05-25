@@ -1,17 +1,20 @@
+import { forwardRef } from 'react'
+
 interface MarkdownEditorPaneProps {
   value: string
   onChange: (value: string) => void
 }
 
-export function MarkdownEditorPane({ value, onChange }: MarkdownEditorPaneProps) {
+export const MarkdownEditorPane = forwardRef<
+  HTMLTextAreaElement,
+  MarkdownEditorPaneProps
+>(function MarkdownEditorPane({ value, onChange }, ref) {
   return (
     <div className="markdown-editor-pane">
-      {/* <label className="markdown-editor-label" htmlFor="markdown-editor-source">
-        Sorgente Markdown
-      </label> */}
       <textarea
+        ref={ref}
         id="markdown-editor-source"
-        className="markdown-editor-textarea"
+        className="markdown-editor-textarea source-editor-textarea"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
@@ -19,4 +22,4 @@ export function MarkdownEditorPane({ value, onChange }: MarkdownEditorPaneProps)
       />
     </div>
   )
-}
+})

@@ -1,65 +1,121 @@
+import { useEffect, useRef, useState } from 'react'
+import type { WritingMode } from '../utils/writingMode'
+import { EditorModal } from './EditorModal'
+
 interface MathFormulaModalProps {
   isOpen: boolean
-  displayMode: boolean
+  initialDisplayMode: boolean
+  writingMode: WritingMode
   onClose: () => void
   onSubmit: (latex: string, displayMode: boolean) => void
 }
 
+const MODE_HINTS: Record<WritingMode, string> = {
+  visual: 'La formula verrà inserita nel documento con rendering KaTeX.',
+  markdown: 'Sintassi salvata come $inline$ o blocco $$...$$ nel Markdown.',
+  latex: 'Sintassi salvata come $...$ o \\[...\\] nel sorgente LaTeX.',
+  typst: 'Sintassi salvata come $...$ o $ ... $ (con spazi) in Typst.',
+}
+
 export function MathFormulaModal({
   isOpen,
-  displayMode,
+  initialDisplayMode,
+  writingMode,
   onClose,
   onSubmit,
 }: MathFormulaModalProps) {
-  if (!isOpen) return null
+  const [displayMode, setDisplayMode] = useState(initialDisplayMode)
+  const [latex, setLatex] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setDisplayMode(initialDisplayMode)
+    setLatex('')
+    setTimeout(() => textareaRef.current?.focus(), 50)
+  }, [isOpen, initialDisplayMode])
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    const trimmed = latex.trim()
+    if (!trimmed) return
+    onSubmit(trimmed, displayMode)
+    onClose()
+  }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <EditorModal
+      isOpen={isOpen}
+      title="Inserisci formula"
+      titleId="math-formula-modal-title"
+      onClose={onClose}
+      className="modal--formula"
+    >
+      <p className="modal-hint">{MODE_HINTS[writingMode]}</p>
+
       <div
-        className="modal-panel math-formula-modal"
-        role="dialog"
-        aria-labelledby="math-formula-modal-title"
-        onClick={(event) => event.stopPropagation()}
+        className="modal-segmented"
+        role="group"
+        aria-label="Tipo formula"
       >
-        <h2 id="math-formula-modal-title" className="modal-title">
-          Inserisci formula LaTeX
-        </h2>
-        <p className="math-formula-modal-hint">
-          Usa la sintassi KaTeX, ad esempio <code>E=mc^2</code> o{' '}
-          <code>{'\\frac{a}{b}'}</code>.
-        </p>
-        <form
-          className="math-formula-modal-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const form = event.currentTarget
-            const latex = new FormData(form).get('latex')
-            if (typeof latex !== 'string' || !latex.trim()) return
-            onSubmit(latex.trim(), displayMode)
-            onClose()
-          }}
+        <button
+          type="button"
+          className={
+            !displayMode
+              ? 'modal-segmented-btn active'
+              : 'modal-segmented-btn'
+          }
+          aria-pressed={!displayMode}
+          onClick={() => setDisplayMode(false)}
         >
-          <label className="math-formula-modal-label" htmlFor="math-formula-latex">
-            Formula
-          </label>
-          <textarea
-            id="math-formula-latex"
-            name="latex"
-            className="math-formula-modal-input"
-            rows={displayMode ? 4 : 2}
-            autoFocus
-            placeholder={displayMode ? '\\int_0^1 x^2 dx' : 'E=mc^2'}
-          />
-          <div className="modal-actions">
-            <button type="button" className="modal-btn modal-btn-secondary" onClick={onClose}>
-              Annulla
-            </button>
-            <button type="submit" className="modal-btn modal-btn-primary">
-              Inserisci
-            </button>
-          </div>
-        </form>
+          Inline
+        </button>
+        <button
+          type="button"
+          className={
+            displayMode ? 'modal-segmented-btn active' : 'modal-segmented-btn'
+          }
+          aria-pressed={displayMode}
+          onClick={() => setDisplayMode(true)}
+        >
+          Blocco
+        </button>
       </div>
-    </div>
+
+      <form onSubmit={handleSubmit}>
+        <label htmlFor="math-formula-latex" className="modal-label">
+          Espressione (KaTeX / LaTeX)
+        </label>
+        <textarea
+          id="math-formula-latex"
+          ref={textareaRef}
+          className="modal-textarea modal-textarea--mono"
+          value={latex}
+          rows={displayMode ? 4 : 2}
+          placeholder={
+            displayMode ? '\\int_0^1 x^2\\,dx' : 'E=mc^2'
+          }
+          onChange={(event) => setLatex(event.target.value)}
+        />
+
+        <p className="modal-hint">
+          Esempi: <code>E=mc^2</code>, <code>{'\\frac{a}{b}'}</code>,{' '}
+          <code>{'\\sum_{i=1}^{n} x_i'}</code>
+        </p>
+
+        <div className="modal-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Annulla
+          </button>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={!latex.trim()}
+          >
+            Inserisci
+          </button>
+        </div>
+      </form>
+    </EditorModal>
   )
 }

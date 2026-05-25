@@ -1,17 +1,20 @@
+import { forwardRef } from 'react'
+
 interface TypstEditorPaneProps {
   value: string
   onChange: (value: string) => void
 }
 
-export function TypstEditorPane({ value, onChange }: TypstEditorPaneProps) {
+export const TypstEditorPane = forwardRef<
+  HTMLTextAreaElement,
+  TypstEditorPaneProps
+>(function TypstEditorPane({ value, onChange }, ref) {
   return (
     <div className="typst-editor-pane">
-      {/* <label className="typst-editor-label" htmlFor="typst-editor-source">
-        Sorgente Typst
-      </label> */}
       <textarea
+        ref={ref}
         id="typst-editor-source"
-        className="typst-editor-textarea"
+        className="typst-editor-textarea source-editor-textarea"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
@@ -19,4 +22,4 @@ export function TypstEditorPane({ value, onChange }: TypstEditorPaneProps) {
       />
     </div>
   )
-}
+})

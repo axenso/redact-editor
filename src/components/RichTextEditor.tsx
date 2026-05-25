@@ -33,6 +33,7 @@ import { MarkdownEditorPane } from './MarkdownEditorPane'
 import { LatexEditorPane } from './LatexEditorPane'
 import { TypstEditorPane } from './TypstEditorPane'
 import { WritingModeSelect } from './WritingModeSelect'
+import { SourceEditorToolbar } from './SourceEditorToolbar'
 import { MathFormulaModal } from './MathFormulaModal'
 import { AiPromptModal } from './AiPromptModal'
 import { EditorInsertContextMenu } from './EditorInsertContextMenu'
@@ -68,6 +69,11 @@ import {
   resolveWritingModeHtml,
   type WritingMode,
 } from '../utils/writingMode'
+import {
+  formatMathForWritingMode,
+  insertSourceAtCursor,
+  insertSourceText,
+} from '../utils/insertSourceAtCursor'
 import { MathBlock, MathInline } from '../extensions/MathFormula'
 import { TableHoverControls } from './TableHoverControls'
 import { AiGenerateModal } from './AiGenerateModal'
@@ -199,6 +205,7 @@ export function RichTextEditor() {
   const markdownSourceInitializedRef = useRef(false)
   const latexSourceInitializedRef = useRef(false)
   const typstSourceInitializedRef = useRef(false)
+  const sourceTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   const handleAiMenuModeChange = useCallback((mode: AiMenuMode) => {
     setAiMenuMode(mode)
@@ -467,6 +474,45 @@ export function RichTextEditor() {
     }
   }, [])
 
+  const applySourceEdit = useCallback(
+    (
+      value: string,
+      selectionStart: number,
+      selectionEnd: number,
+    ) => {
+      if (writingModeRef.current === 'markdown') {
+        handleMarkdownSourceChange(value)
+      } else if (writingModeRef.current === 'latex') {
+        handleLatexSourceChange(value)
+      } else if (writingModeRef.current === 'typst') {
+        handleTypstSourceChange(value)
+      }
+
+      requestAnimationFrame(() => {
+        const textarea = sourceTextareaRef.current
+        if (!textarea) return
+        textarea.focus()
+        textarea.setSelectionRange(selectionStart, selectionEnd)
+      })
+    },
+    [
+      handleMarkdownSourceChange,
+      handleLatexSourceChange,
+      handleTypstSourceChange,
+    ],
+  )
+
+  const insertSourceSnippet = useCallback(
+    (before: string, after: string, placeholder = '') => {
+      const textarea = sourceTextareaRef.current
+      if (!textarea) return
+
+      const result = insertSourceAtCursor(textarea, before, after, placeholder)
+      applySourceEdit(result.value, result.selectionStart, result.selectionEnd)
+    },
+    [applySourceEdit],
+  )
+
   const openMathFormulaModal = useCallback((displayMode: boolean) => {
     setMathModalDisplayMode(displayMode)
     setMathModalOpen(true)
@@ -474,24 +520,39 @@ export function RichTextEditor() {
 
   const handleInsertMathFormula = useCallback(
     (latex: string, displayMode: boolean) => {
-      if (!editor) return
+      if (writingModeRef.current === 'visual') {
+        if (!editor) return
 
-      if (displayMode) {
+        if (displayMode) {
+          editor
+            .chain()
+            .focus()
+            .insertContent({ type: 'mathBlock', attrs: { latex } })
+            .run()
+          return
+        }
+
         editor
           .chain()
           .focus()
-          .insertContent({ type: 'mathBlock', attrs: { latex } })
+          .insertContent({ type: 'mathInline', attrs: { latex } })
           .run()
         return
       }
 
-      editor
-        .chain()
-        .focus()
-        .insertContent({ type: 'mathInline', attrs: { latex } })
-        .run()
+      const textarea = sourceTextareaRef.current
+      if (!textarea) return
+
+      const mode = writingModeRef.current as Exclude<WritingMode, 'visual'>
+      const snippet = formatMathForWritingMode(mode, latex, displayMode)
+      const result = insertSourceText(textarea, snippet)
+      applySourceEdit(
+        result.value,
+        result.selectionStart,
+        result.selectionEnd,
+      )
     },
-    [editor],
+    [editor, applySourceEdit],
   )
 
   const loadVersion = useCallback(
@@ -1085,15 +1146,20 @@ export function RichTextEditor() {
         </>
       }
       toolbar={
-        sourceEditorActive ? null : (
+        writingMode === 'visual' ? (
           <Toolbar
             editor={editor}
             isInTable={isInTable}
             onInsertImage={openImageInsertModal}
             onInsertTable={() => openTableInsertModal()}
             onInsertChart={() => openChartInsertModal()}
-            onInsertInlineMath={() => openMathFormulaModal(false)}
-            onInsertBlockMath={() => openMathFormulaModal(true)}
+            onInsertMath={() => openMathFormulaModal(false)}
+          />
+        ) : (
+          <SourceEditorToolbar
+            mode={writingMode}
+            onInsertSnippet={insertSourceSnippet}
+            onOpenFormula={openMathFormulaModal}
           />
         )
       }
@@ -1140,6 +1206,7 @@ export function RichTextEditor() {
                   </p>
                 )}
                 <MarkdownEditorPane
+                  ref={sourceTextareaRef}
                   value={markdownSource}
                   onChange={handleMarkdownSourceChange}
                 />
@@ -1152,6 +1219,7 @@ export function RichTextEditor() {
                   </p>
                 )}
                 <LatexEditorPane
+                  ref={sourceTextareaRef}
                   value={latexSource}
                   onChange={handleLatexSourceChange}
                 />
@@ -1164,6 +1232,7 @@ export function RichTextEditor() {
                   </p>
                 )}
                 <TypstEditorPane
+                  ref={sourceTextareaRef}
                   value={typstSource}
                   onChange={handleTypstSourceChange}
                 />
@@ -1290,7 +1359,8 @@ export function RichTextEditor() {
 
       <MathFormulaModal
         isOpen={mathModalOpen}
-        displayMode={mathModalDisplayMode}
+        initialDisplayMode={mathModalDisplayMode}
+        writingMode={writingMode}
         onClose={() => setMathModalOpen(false)}
         onSubmit={handleInsertMathFormula}
       />
