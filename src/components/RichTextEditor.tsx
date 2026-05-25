@@ -1182,7 +1182,8 @@ export function RichTextEditor() {
           onRestoreOriginal={handleRestoreOriginal}
           onRestoreLatest={handleRestoreLatest}
           autosaveStatus={status}
-          showAiButton={aiMenuMode === 'toolbar' && !sourceEditorActive}
+          showAiButton={aiMenuMode === 'toolbar'}
+          aiButtonDisabled={sourceEditorActive}
           hasTextSelection={hasTextSelection}
           onAiClick={handleOpenAiModal}
         />

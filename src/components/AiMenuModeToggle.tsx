@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { ChevronDown, Sparkles } from 'lucide-react'
 import type { AiMenuMode } from '../hooks/useLocalStorage'
 import { AppIcon } from './LucideIcon'
 
@@ -70,6 +70,7 @@ export function AiMenuModeToggle({ mode, onChange }: AiMenuModeToggleProps) {
       >
         <AppIcon icon={Sparkles} size="sm" />
         <span className="ai-menu-trigger-label">{active?.label ?? mode}</span>
+        <AppIcon icon={ChevronDown} size="xs" className="ai-menu-trigger-chevron" />
       </button>
 
       {open && (

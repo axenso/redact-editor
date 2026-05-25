@@ -10,6 +10,7 @@ interface HistoryRestoreActionsProps {
   onRestoreLatest: () => void
   autosaveStatus: AutosaveStatus
   showAiButton?: boolean
+  aiButtonDisabled?: boolean
   hasTextSelection?: boolean
   onAiClick?: () => void
 }
@@ -22,6 +23,7 @@ export function HistoryRestoreActions({
   onRestoreLatest,
   autosaveStatus,
   showAiButton = false,
+  aiButtonDisabled = false,
   hasTextSelection = false,
   onAiClick,
 }: HistoryRestoreActionsProps) {
@@ -30,6 +32,13 @@ export function HistoryRestoreActions({
     autosaveStatus === 'error' ||
     canRestoreOriginal ||
     canRestoreLatest
+  const aiButtonEnabled =
+    Boolean(onAiClick) && hasTextSelection && !aiButtonDisabled
+  const aiButtonTitle = aiButtonDisabled
+    ? 'Disponibile solo in modalità visuale'
+    : hasTextSelection
+      ? 'Modifica con AI'
+      : 'Seleziona del testo per modificare con AI'
 
   return (
     <div className="history-restore-actions editor-meta-bar">
@@ -71,11 +80,16 @@ export function HistoryRestoreActions({
       </div>
 
       <div className="editor-meta-bar-actions">
-        {showAiButton && hasTextSelection && onAiClick && (
+        {showAiButton && onAiClick && (
           <button
             type="button"
-            className="toolbar-ai-toggle active btn-with-icon"
-            title="Modifica con AI"
+            className={
+              aiButtonEnabled
+                ? 'toolbar-ai-toggle active btn-with-icon'
+                : 'toolbar-ai-toggle btn-with-icon'
+            }
+            title={aiButtonTitle}
+            disabled={!aiButtonEnabled}
             onMouseDown={(event) => event.preventDefault()}
             onClick={onAiClick}
           >

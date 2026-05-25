@@ -4,18 +4,28 @@ export type PageOrientation = 'portrait' | 'landscape'
 export interface PageFormatDefinition {
   id: PageFormatId
   label: string
+  hint: string
   widthMm: number
   heightMm: number
 }
 
 export const PAGE_FORMATS: PageFormatDefinition[] = [
-  { id: 'a4', label: 'A4', widthMm: 210, heightMm: 297 },
-  { id: 'letter', label: 'Letter', widthMm: 216, heightMm: 279 },
-  { id: 'legal', label: 'Legal', widthMm: 216, heightMm: 356 },
-  { id: 'a5', label: 'A5', widthMm: 148, heightMm: 210 },
+  { id: 'a4', label: 'A4', hint: '210 × 297 mm', widthMm: 210, heightMm: 297 },
+  { id: 'letter', label: 'Letter', hint: '216 × 279 mm', widthMm: 216, heightMm: 279 },
+  { id: 'legal', label: 'Legal', hint: '216 × 356 mm', widthMm: 216, heightMm: 356 },
+  { id: 'a5', label: 'A5', hint: '148 × 210 mm', widthMm: 148, heightMm: 210 },
 ]
 
 export const PAGE_FORMAT_IDS = PAGE_FORMATS.map((f) => f.id)
+
+export const PAGE_ORIENTATION_OPTIONS: {
+  id: PageOrientation
+  label: string
+  hint: string
+}[] = [
+  { id: 'portrait', label: 'Verticale', hint: 'Altezza maggiore della larghezza' },
+  { id: 'landscape', label: 'Orizzontale', hint: 'Larghezza maggiore dell\'altezza' },
+]
 
 export interface PageLayout {
   formatId: PageFormatId

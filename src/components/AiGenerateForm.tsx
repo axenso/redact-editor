@@ -88,26 +88,31 @@ export function AiGenerateForm({
       />
 
       <p className="modal-examples-label">Altre idee dal documento</p>
-      <div className="modal-examples">
+      <ul className="modal-examples" role="list">
         {examplesLoading ? (
-          <p className="modal-examples-loading">Generazione suggerimenti…</p>
+          <li role="listitem">
+            <p className="modal-examples-loading">Generazione suggerimenti…</p>
+          </li>
         ) : resolvedExamples.length > 0 ? (
           resolvedExamples.map((example) => (
-            <button
-              key={example}
-              type="button"
-              className="example-chip"
-              onClick={() => setInstruction(example)}
-            >
-              {example}
-            </button>
+            <li key={example} role="listitem">
+              <button
+                type="button"
+                className="example-chip"
+                onClick={() => setInstruction(example)}
+              >
+                {example}
+              </button>
+            </li>
           ))
         ) : (
-          <p className="modal-examples-loading">
-            Scrivi nel documento per ottenere suggerimenti personalizzati.
-          </p>
+          <li role="listitem">
+            <p className="modal-examples-loading">
+              Scrivi nel documento per ottenere suggerimenti personalizzati.
+            </p>
+          </li>
         )}
-      </div>
+      </ul>
 
       {error && <p className="modal-error">{error}</p>}
 

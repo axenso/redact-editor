@@ -85,18 +85,19 @@ export function AiPromptModal({
               rows={3}
             />
 
-            <div className="modal-examples">
+            <ul className="modal-examples" role="list">
               {PROMPT_EXAMPLES.map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  className="example-chip"
-                  onClick={() => setInstruction(example)}
-                >
-                  {example}
-                </button>
+                <li key={example} role="listitem">
+                  <button
+                    type="button"
+                    className="example-chip"
+                    onClick={() => setInstruction(example)}
+                  >
+                    {example}
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
 
             {error && <p className="modal-error">{error}</p>}
 
