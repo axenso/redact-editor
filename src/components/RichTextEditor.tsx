@@ -39,6 +39,7 @@ import { PageFormatSelect } from './PageFormatSelect'
 import { ImageEditorModal } from './ImageEditorModal'
 import { ChartEditorModal } from './ChartEditorModal'
 import {
+  convertTextToTableWithAI,
   generateTableWithAI,
   generateChartWithAI,
   modifyTextWithAI,
@@ -49,7 +50,10 @@ import {
   updateAiTableAt,
 } from '../utils/insertAiTable'
 import {
-  parseTableFromAiResponse,
+  isUsableTableData,
+  parseLineListAsTable,
+  parseStructuredTableText,
+  sanitizeTableData,
   tableDataToPlainText,
   wantsTableOutput,
 } from '../utils/parseMarkdownTable'
@@ -677,62 +681,46 @@ export function RichTextEditor() {
           )
         }
 
-        let tableData = null
         let selectionAfter = ''
         const tableRequested = wantsTableOutput(instruction)
 
         if (tableRequested) {
-          tableData = parseTableFromAiResponse(currentSelectedText)
-        }
+          let tableData =
+            parseStructuredTableText(currentSelectedText) ??
+            (await convertTextToTableWithAI(instruction, currentSelectedText))
 
-        if (!tableData && tableRequested) {
-          tableData = await generateTableWithAI({
-            instruction,
-            context: currentSelectedText,
-          })
-        }
+          tableData = sanitizeTableData(tableData)
 
-        if (!tableData) {
+          if (!isUsableTableData(tableData)) {
+            tableData = parseLineListAsTable(currentSelectedText)
+          }
+
+          if (!isUsableTableData(tableData)) {
+            throw new Error(
+              'Impossibile convertire il testo in tabella. Prova a selezionare di nuovo il blocco.',
+            )
+          }
+
+          selectionAfter = tableDataToPlainText(tableData)
+
+          if (!applyTableDataAtSelection(editor, from, to, tableData)) {
+            throw new Error('Impossibile inserire o aggiornare la tabella.')
+          }
+        } else {
           const modified = await modifyTextWithAI({
             text: currentSelectedText,
             instruction,
             inTable: editor.isActive('table'),
-            wantsTableOutput: tableRequested,
           })
 
-          tableData = parseTableFromAiResponse(modified)
+          selectionAfter = modified
 
-          if (!tableData && tableRequested) {
-            tableData = await generateTableWithAI({
-              instruction,
-              context: `${currentSelectedText}\n\n${modified}`,
-            })
-          }
-
-          if (tableData) {
-            selectionAfter = tableDataToPlainText(tableData)
-          } else {
-            selectionAfter = modified
-          }
-        } else {
-          selectionAfter = tableDataToPlainText(tableData)
-        }
-
-        if (tableData) {
-          if (!applyTableDataAtSelection(editor, from, to, tableData)) {
-            throw new Error('Impossibile inserire o aggiornare la tabella.')
-          }
-        } else if (!tableRequested) {
           editor
             .chain()
             .focus()
             .deleteRange({ from, to })
             .insertContentAt(from, selectionAfter)
             .run()
-        } else {
-          throw new Error(
-            'Impossibile convertire il testo in tabella. Prova a selezionare di nuovo il blocco.',
-          )
         }
 
         const contentHtml = editor.getHTML()

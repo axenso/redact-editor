@@ -237,11 +237,71 @@ export function parseMarkdownTable(text: string): AiTableData | null {
 }
 
 export function parseTableFromAiResponse(text: string): AiTableData | null {
-  return (
-    parseMarkdownTable(text) ??
-    parseJsonTable(text) ??
-    parsePlainTextTable(text)
+  return parseStructuredTableText(text)
+}
+
+/** Solo Markdown o JSON già strutturati — evita falsi positivi sul testo libero. */
+export function parseStructuredTableText(text: string): AiTableData | null {
+  return parseMarkdownTable(text) ?? parseJsonTable(text)
+}
+
+export function sanitizeTableData(table: AiTableData): AiTableData {
+  const colCount = Math.max(
+    table.headers.length,
+    ...table.rows.map((row) => row.length),
+    2,
   )
+
+  const headers = Array.from({ length: colCount }, (_, index) =>
+    stripInlineMarkdown(String(table.headers[index] ?? '')),
+  )
+
+  const rows = table.rows
+    .map((row) =>
+      Array.from({ length: colCount }, (_, index) =>
+        stripInlineMarkdown(String(row[index] ?? '')),
+      ),
+    )
+    .filter((row) => row.some((cell) => cell.length > 0))
+
+  return { headers, rows }
+}
+
+export function isUsableTableData(
+  table: AiTableData | null,
+): table is AiTableData {
+  if (!table) return false
+
+  const { headers, rows } = sanitizeTableData(table)
+  const filledHeaders = headers.filter((cell) => cell.trim()).length
+  const filledCells = rows.flat().filter((cell) => cell.trim()).length
+
+  if (filledHeaders < 2 || rows.length < 1) return false
+  if (filledCells < 1) return false
+
+  return true
+}
+
+export function parseLineListAsTable(text: string): AiTableData | null {
+  const lines = getNonEmptyLines(text)
+  if (lines.length < 2) return null
+
+  const numberedLines = lines.filter((line) => /^\d+[.)]?\s+\S/.test(line))
+  if (numberedLines.length < Math.ceil(lines.length * 0.5)) return null
+
+  const rows = lines.map((line) => {
+    const match = line.match(/^(\d+[.)]?)\s+(.*)$/)
+    if (match) {
+      return [match[1].replace(/[.)]$/, ''), match[2].trim()]
+    }
+
+    return ['', line]
+  })
+
+  return sanitizeTableData({
+    headers: ['#', 'Contenuto'],
+    rows,
+  })
 }
 
 export function tableDataToPlainText(table: AiTableData): string {

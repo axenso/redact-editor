@@ -270,6 +270,40 @@ Regole: 2-8 colonne in headers; 1-20 righe in rows; ogni riga ha tanti elementi 
   return validateTablePayload(parseJsonResponse(raw))
 }
 
+export async function convertTextToTableWithAI(
+  instruction: string,
+  sourceText: string,
+): Promise<AiTableData> {
+  const userQuery = `Istruzione: ${instruction}${buildContextBlock(sourceText)}`
+  const conversionRules = sourceText.trim()
+    ? `
+Il testo in contesto va convertito in una tabella strutturata.
+- Usa SOLO informazioni presenti nel testo; non inventare dati.
+- Se il testo è un elenco numerato (es. "1 voce", "2 voce"), metti numero e contenuto in colonne separate.
+- Raggruppa righe e valori correlati in colonne coerenti.
+- Evita righe vuote, colonne superflue e celle sparse.
+- Preferisci 2-6 colonne chiare con intestazioni descrittive.`
+    : ''
+
+  const raw = await callOpenAI(
+    [
+      {
+        role: 'system',
+        content: `Converti contenuto testuale in tabella dati. Rispondi SOLO con JSON valido nel formato:
+{
+  "headers": ["Colonna 1", "Colonna 2"],
+  "rows": [["valore", "valore"], ["valore", "valore"]]
+}
+Regole: 2-8 colonne in headers; 1-20 righe in rows; ogni riga con esattamente tanti elementi quante le colonne; contenuti in italiano salvo richiesta diversa.${conversionRules}`,
+      },
+      { role: 'user', content: userQuery },
+    ],
+    { json: true, maxTokens: 2000 },
+  )
+
+  return validateTablePayload(parseJsonResponse(raw))
+}
+
 const SUGGESTION_PROMPTS: Record<DocumentSuggestionKind, string> = {
   chart: `Generi ${DOCUMENT_SUGGESTION_LIMIT} brevi istruzioni (max 90 caratteri ciascuna) per creare un grafico basato sul documento.
 Rispondi SOLO con JSON: {"suggestions": ["...", "..."]}.
