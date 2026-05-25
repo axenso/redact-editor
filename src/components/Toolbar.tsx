@@ -11,6 +11,7 @@ import {
   List,
   ListOrdered,
   Pilcrow,
+  Sigma,
   Table,
   Underline,
 } from 'lucide-react'
@@ -29,6 +30,8 @@ interface ToolbarProps {
   onInsertImage?: () => void
   onInsertTable?: () => void
   onInsertChart?: () => void
+  onInsertInlineMath?: () => void
+  onInsertBlockMath?: () => void
 }
 
 interface ToolbarButtonProps {
@@ -61,6 +64,8 @@ export function Toolbar({
   onInsertImage,
   onInsertTable,
   onInsertChart,
+  onInsertInlineMath,
+  onInsertBlockMath,
 }: ToolbarProps) {
   return (
     <div className="toolbar" role="toolbar" aria-label="Formattazione testo">
@@ -181,6 +186,26 @@ export function Toolbar({
       {onInsertChart && (
         <ToolbarButton title="Inserisci grafico" onClick={onInsertChart}>
           <AppIcon icon={BarChart3} size="sm" />
+        </ToolbarButton>
+      )}
+
+      {onInsertInlineMath && (
+        <ToolbarButton
+          title="Inserisci formula inline (LaTeX)"
+          onClick={onInsertInlineMath}
+        >
+          <AppIcon icon={Sigma} size="sm" />
+        </ToolbarButton>
+      )}
+
+      {onInsertBlockMath && (
+        <ToolbarButton
+          title="Inserisci formula in blocco (LaTeX)"
+          onClick={onInsertBlockMath}
+        >
+          <span className="toolbar-math-block-label" aria-hidden="true">
+            Σ
+          </span>
         </ToolbarButton>
       )}
 

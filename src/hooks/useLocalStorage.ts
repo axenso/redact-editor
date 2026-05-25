@@ -1,5 +1,6 @@
 import type { PageFormatId, PageOrientation } from '../constants/pageFormat'
 import { PAGE_FORMAT_IDS } from '../constants/pageFormat'
+import type { WritingMode } from '../utils/writingMode'
 
 export const STORAGE_KEY = 'interactive-chat-content'
 export const DOCUMENT_META_KEY = 'interactive-chat-document-meta'
@@ -9,6 +10,72 @@ export const PAGE_FORMAT_KEY = 'interactive-chat-page-format'
 export const PAGE_ORIENTATION_KEY = 'interactive-chat-page-orientation'
 export const HISTORY_SIDEBAR_WIDTH_KEY = 'interactive-chat-history-sidebar-width'
 export const EDITOR_PAGE_WIDTHS_KEY = 'interactive-chat-editor-page-widths'
+export const MARKDOWN_EDITOR_KEY = 'interactive-chat-markdown-editor'
+export const LATEX_EDITOR_KEY = 'interactive-chat-latex-editor'
+export const WRITING_MODE_KEY = 'interactive-chat-writing-mode'
+
+export function loadWritingMode(): WritingMode {
+  try {
+    const stored = localStorage.getItem(WRITING_MODE_KEY)
+    if (stored === 'visual' || stored === 'markdown' || stored === 'latex' || stored === 'typst') {
+      return stored
+    }
+
+    if (localStorage.getItem(LATEX_EDITOR_KEY) === 'true') {
+      return 'latex'
+    }
+
+    if (localStorage.getItem(MARKDOWN_EDITOR_KEY) === 'true') {
+      return 'markdown'
+    }
+
+    return 'visual'
+  } catch {
+    return 'visual'
+  }
+}
+
+export function saveWritingMode(mode: WritingMode): void {
+  try {
+    localStorage.setItem(WRITING_MODE_KEY, mode)
+    localStorage.setItem(MARKDOWN_EDITOR_KEY, mode === 'markdown' ? 'true' : 'false')
+    localStorage.setItem(LATEX_EDITOR_KEY, mode === 'latex' ? 'true' : 'false')
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+export function loadMarkdownEditorEnabled(): boolean {
+  try {
+    return localStorage.getItem(MARKDOWN_EDITOR_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function saveMarkdownEditorEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(MARKDOWN_EDITOR_KEY, enabled ? 'true' : 'false')
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+export function loadLatexEditorEnabled(): boolean {
+  try {
+    return localStorage.getItem(LATEX_EDITOR_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function saveLatexEditorEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(LATEX_EDITOR_KEY, enabled ? 'true' : 'false')
+  } catch {
+    // localStorage unavailable
+  }
+}
 
 const DEFAULT_HISTORY_SIDEBAR_WIDTH = 360
 const MIN_HISTORY_SIDEBAR_WIDTH = 260
@@ -387,7 +454,7 @@ export function saveContent(html: string): void {
 }
 
 export const DEFAULT_CONTENT = `
-<h1>Benvenuto in REACTA</h1>
+<h1>Benvenuto in REDACTA</h1>
 <p>Inizia a scrivere il tuo documento. Usa la barra degli strumenti per titoli, stile e interlinea.</p>
 <p>Seleziona un passaggio e scegli <strong>Modifica con AI</strong> dalla barra, dal menu contestuale o dal popup sulla selezione.</p>
 `.trim()

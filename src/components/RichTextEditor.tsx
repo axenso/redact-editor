@@ -27,8 +27,13 @@ import {
 } from '../extensions/ImageBlock'
 import { AppShell } from './AppShell'
 import { Toolbar } from './Toolbar'
-import { EditorBlockGutter } from './EditorBlockGutter'
 import { AiMenuModeToggle } from './AiMenuModeToggle'
+import { EditorBlockGutter } from './EditorBlockGutter'
+import { MarkdownEditorPane } from './MarkdownEditorPane'
+import { LatexEditorPane } from './LatexEditorPane'
+import { TypstEditorPane } from './TypstEditorPane'
+import { WritingModeSelect } from './WritingModeSelect'
+import { MathFormulaModal } from './MathFormulaModal'
 import { AiPromptModal } from './AiPromptModal'
 import { EditorInsertContextMenu } from './EditorInsertContextMenu'
 import { EditorMetaFooter } from './EditorMetaFooter'
@@ -58,7 +63,12 @@ import {
   wantsTableOutput,
 } from '../utils/parseMarkdownTable'
 import { getSelectedTextFromRange } from '../utils/selectionText'
-import { normalizeTableHtml } from '../utils/normalizeTableHtml'
+import {
+  convertHtmlToWritingModeSource,
+  resolveWritingModeHtml,
+  type WritingMode,
+} from '../utils/writingMode'
+import { MathBlock, MathInline } from '../extensions/MathFormula'
 import { TableHoverControls } from './TableHoverControls'
 import { AiGenerateModal } from './AiGenerateModal'
 import type { AiGenerateKind } from './AiGenerateForm'
@@ -76,14 +86,17 @@ import {
   getLatestVersionEntry,
 } from '../utils/getRestorableEntry'
 import { stripDiffMarksFromHtml } from '../utils/sanitizeHtml'
+import { normalizeTableHtml } from '../utils/normalizeTableHtml'
 import type { EditHistoryEntry } from '../types/editHistory'
 import {
   DEFAULT_CONTENT,
   loadAiMenuMode,
   loadContent,
+  loadWritingMode,
   loadPageFormat,
   loadPageOrientation,
   saveAiMenuMode,
+  saveWritingMode,
   savePageFormat,
   savePageOrientation,
   type AiMenuMode,
@@ -105,6 +118,13 @@ export function RichTextEditor() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aiMenuMode, setAiMenuMode] = useState<AiMenuMode>(loadAiMenuMode)
+  const [writingMode, setWritingMode] = useState<WritingMode>(loadWritingMode)
+  const [markdownSource, setMarkdownSource] = useState('')
+  const [latexSource, setLatexSource] = useState('')
+  const [typstSource, setTypstSource] = useState('')
+  const [writingModeError, setWritingModeError] = useState<string | null>(null)
+  const [mathModalOpen, setMathModalOpen] = useState(false)
+  const [mathModalDisplayMode, setMathModalDisplayMode] = useState(false)
   const [pageFormatId, setPageFormatId] = useState<PageFormatId>(loadPageFormat)
   const [pageOrientation, setPageOrientation] =
     useState<PageOrientation>(loadPageOrientation)
@@ -172,6 +192,14 @@ export function RichTextEditor() {
     shouldFinalizeOnEdit,
   } = useInlineDiff()
 
+  const writingModeRef = useRef(writingMode)
+  writingModeRef.current = writingMode
+  const sourceEditorActiveRef = useRef(writingMode !== 'visual')
+  sourceEditorActiveRef.current = writingMode !== 'visual'
+  const markdownSourceInitializedRef = useRef(false)
+  const latexSourceInitializedRef = useRef(false)
+  const typstSourceInitializedRef = useRef(false)
+
   const handleAiMenuModeChange = useCallback((mode: AiMenuMode) => {
     setAiMenuMode(mode)
     saveAiMenuMode(mode)
@@ -218,6 +246,8 @@ export function RichTextEditor() {
       TableHeader,
       TableCell,
       ChartBlock,
+      MathInline,
+      MathBlock,
       DiffAdded,
       DiffRemoved,
     ],
@@ -229,7 +259,11 @@ export function RichTextEditor() {
       if (transaction.docChanged && shouldFinalizeOnEdit(ed)) {
         finalizeDiff(ed)
       }
-      if (!docHasDiffMarks(ed) && transaction.docChanged) {
+      if (
+        !sourceEditorActiveRef.current &&
+        !docHasDiffMarks(ed) &&
+        transaction.docChanged
+      ) {
         const html = ed.getHTML()
         scheduleSave(html)
         syncActiveEntryRef.current(html)
@@ -247,11 +281,218 @@ export function RichTextEditor() {
     },
   })
 
+  const handleWritingModeChange = useCallback(
+    (nextMode: WritingMode) => {
+      if (!editor || nextMode === writingMode) return
+
+      setWritingModeError(null)
+
+      try {
+        const canonicalHtml = resolveWritingModeHtml(writingMode, {
+          editorHtml: editor.getHTML(),
+          markdown: markdownSource,
+          latex: latexSource,
+          typst: typstSource,
+        })
+
+        restoreEditorContent(editor, canonicalHtml, clearAllDiffMarks, {
+          preserveScroll: nextMode === 'visual',
+        })
+
+        if (nextMode === 'markdown') {
+          setMarkdownSource(convertHtmlToWritingModeSource('markdown', canonicalHtml))
+        }
+
+        if (nextMode === 'latex') {
+          setLatexSource(convertHtmlToWritingModeSource('latex', canonicalHtml))
+        }
+
+        if (nextMode === 'typst') {
+          setTypstSource(convertHtmlToWritingModeSource('typst', canonicalHtml))
+        }
+
+        saveNow(canonicalHtml)
+        setHistoryBaselineRef.current(canonicalHtml)
+        syncActiveEntryRef.current(canonicalHtml)
+        setWritingMode(nextMode)
+        saveWritingMode(nextMode)
+      } catch {
+        setWritingModeError(
+          'Impossibile convertire il contenuto nella modalità selezionata.',
+        )
+      }
+    },
+    [
+      editor,
+      writingMode,
+      markdownSource,
+      latexSource,
+      typstSource,
+      clearAllDiffMarks,
+      saveNow,
+    ],
+  )
+
+  const handleMarkdownSourceChange = useCallback(
+    (value: string) => {
+      setMarkdownSource(value)
+      setWritingModeError(null)
+
+      try {
+        const html = resolveWritingModeHtml('markdown', {
+          editorHtml: editor?.getHTML() ?? '',
+          markdown: value,
+          latex: latexSource,
+          typst: typstSource,
+        })
+        scheduleSave(html)
+        syncActiveEntryRef.current(html)
+      } catch {
+        // Mantieni l'ultima versione salvata finché il Markdown non è valido.
+      }
+    },
+    [editor, latexSource, typstSource, scheduleSave],
+  )
+
+  const handleLatexSourceChange = useCallback(
+    (value: string) => {
+      setLatexSource(value)
+      setWritingModeError(null)
+
+      try {
+        const html = resolveWritingModeHtml('latex', {
+          editorHtml: editor?.getHTML() ?? '',
+          markdown: markdownSource,
+          latex: value,
+          typst: typstSource,
+        })
+        scheduleSave(html)
+        syncActiveEntryRef.current(html)
+      } catch {
+        // Mantieni l'ultima versione salvata finché il LaTeX non è valido.
+      }
+    },
+    [editor, markdownSource, typstSource, scheduleSave],
+  )
+
+  const handleTypstSourceChange = useCallback(
+    (value: string) => {
+      setTypstSource(value)
+      setWritingModeError(null)
+
+      try {
+        const html = resolveWritingModeHtml('typst', {
+          editorHtml: editor?.getHTML() ?? '',
+          markdown: markdownSource,
+          latex: latexSource,
+          typst: value,
+        })
+        scheduleSave(html)
+        syncActiveEntryRef.current(html)
+      } catch {
+        // Mantieni l'ultima versione salvata finché il Typst non è valido.
+      }
+    },
+    [editor, markdownSource, latexSource, scheduleSave],
+  )
+
+  useEffect(() => {
+    if (
+      !editor ||
+      writingMode !== 'markdown' ||
+      markdownSourceInitializedRef.current
+    ) {
+      return
+    }
+
+    markdownSourceInitializedRef.current = true
+    setMarkdownSource(
+      convertHtmlToWritingModeSource(
+        'markdown',
+        stripDiffMarksFromHtml(editor.getHTML()),
+      ),
+    )
+  }, [editor, writingMode])
+
+  useEffect(() => {
+    if (
+      !editor ||
+      writingMode !== 'latex' ||
+      latexSourceInitializedRef.current
+    ) {
+      return
+    }
+
+    latexSourceInitializedRef.current = true
+    setLatexSource(
+      convertHtmlToWritingModeSource(
+        'latex',
+        stripDiffMarksFromHtml(editor.getHTML()),
+      ),
+    )
+  }, [editor, writingMode])
+
+  useEffect(() => {
+    if (
+      !editor ||
+      writingMode !== 'typst' ||
+      typstSourceInitializedRef.current
+    ) {
+      return
+    }
+
+    typstSourceInitializedRef.current = true
+    setTypstSource(
+      convertHtmlToWritingModeSource(
+        'typst',
+        stripDiffMarksFromHtml(editor.getHTML()),
+      ),
+    )
+  }, [editor, writingMode])
+
   useEffect(() => {
     return () => {
       flushPending()
     }
   }, [flushPending])
+
+  const syncSourceEditorFromHtml = useCallback((html: string) => {
+    const clean = stripDiffMarksFromHtml(html)
+    if (writingModeRef.current === 'markdown') {
+      setMarkdownSource(convertHtmlToWritingModeSource('markdown', clean))
+    } else if (writingModeRef.current === 'latex') {
+      setLatexSource(convertHtmlToWritingModeSource('latex', clean))
+    } else if (writingModeRef.current === 'typst') {
+      setTypstSource(convertHtmlToWritingModeSource('typst', clean))
+    }
+  }, [])
+
+  const openMathFormulaModal = useCallback((displayMode: boolean) => {
+    setMathModalDisplayMode(displayMode)
+    setMathModalOpen(true)
+  }, [])
+
+  const handleInsertMathFormula = useCallback(
+    (latex: string, displayMode: boolean) => {
+      if (!editor) return
+
+      if (displayMode) {
+        editor
+          .chain()
+          .focus()
+          .insertContent({ type: 'mathBlock', attrs: { latex } })
+          .run()
+        return
+      }
+
+      editor
+        .chain()
+        .focus()
+        .insertContent({ type: 'mathInline', attrs: { latex } })
+        .run()
+    },
+    [editor],
+  )
 
   const loadVersion = useCallback(
     (entry: EditHistoryEntry) => {
@@ -262,6 +503,7 @@ export function RichTextEditor() {
         preserveScroll: false,
       })
       saveNow(cleanHtml)
+      syncSourceEditorFromHtml(cleanHtml)
       setActiveEntry(entry.id)
       setHistoryBaselineRef.current(cleanHtml)
       resumeHistoryRecordingRef.current()
@@ -272,7 +514,7 @@ export function RichTextEditor() {
         })
       })
     },
-    [editor, setActiveEntry, clearAllDiffMarks, saveNow],
+    [editor, setActiveEntry, clearAllDiffMarks, saveNow, syncSourceEditorFromHtml],
   )
 
   const handleRestoreHistory = useCallback(
@@ -341,9 +583,11 @@ export function RichTextEditor() {
         stripDiffMarksFromHtml(previousHtml),
         clearAllDiffMarks,
       )
-      saveNow(stripDiffMarksFromHtml(previousHtml))
+      const restoredHtml = stripDiffMarksFromHtml(previousHtml)
+      saveNow(restoredHtml)
+      syncSourceEditorFromHtml(restoredHtml)
       setActiveEntry(priorEntryId)
-      setHistoryBaselineRef.current(stripDiffMarksFromHtml(previousHtml))
+      setHistoryBaselineRef.current(restoredHtml)
       resumeHistoryRecordingRef.current()
     },
     [
@@ -354,6 +598,7 @@ export function RichTextEditor() {
       setActiveEntry,
       clearAllDiffMarks,
       saveNow,
+      syncSourceEditorFromHtml,
     ],
   )
 
@@ -370,10 +615,18 @@ export function RichTextEditor() {
       preserveScroll: false,
     })
     saveNow(cleanHtml)
+    syncSourceEditorFromHtml(cleanHtml)
     syncActiveEntry(cleanHtml)
     setHistoryBaselineRef.current(cleanHtml)
     resumeHistoryRecordingRef.current()
-  }, [editor, historyEntries, syncActiveEntry, clearAllDiffMarks, saveNow])
+  }, [
+    editor,
+    historyEntries,
+    syncActiveEntry,
+    clearAllDiffMarks,
+    saveNow,
+    syncSourceEditorFromHtml,
+  ])
 
   const handleRestoreLatest = useCallback(() => {
     const latest = getLatestVersionEntry(historyEntries)
@@ -503,12 +756,21 @@ export function RichTextEditor() {
   }, [editor, openAiGenerate])
 
   const getDocumentContext = useCallback(() => {
+    if (writingModeRef.current === 'markdown') {
+      return markdownSource.trim().slice(0, 2500)
+    }
+    if (writingModeRef.current === 'latex') {
+      return latexSource.trim().slice(0, 2500)
+    }
+    if (writingModeRef.current === 'typst') {
+      return typstSource.trim().slice(0, 2500)
+    }
     if (!editor) return ''
     return editor.state.doc
       .textBetween(0, editor.state.doc.content.size, '\n', '\n')
       .trim()
       .slice(0, 2500)
-  }, [editor])
+  }, [editor, markdownSource, latexSource, typstSource])
 
   const runAiGenerate = useCallback(
     async (
@@ -771,14 +1033,29 @@ export function RichTextEditor() {
     return <div className="editor-loading">Caricamento editor…</div>
   }
 
-  const currentEditorHtml = stripDiffMarksFromHtml(editor.getHTML())
+  const sourceEditorActive = writingMode !== 'visual'
+
+  const getCurrentDocumentHtml = () => {
+    try {
+      return resolveWritingModeHtml(writingMode, {
+        editorHtml: editor.getHTML(),
+        markdown: markdownSource,
+        latex: latexSource,
+        typst: typstSource,
+      })
+    } catch {
+      return stripDiffMarksFromHtml(editor.getHTML())
+    }
+  }
+
+  const currentDocumentHtml = getCurrentDocumentHtml()
   const canRestoreOriginal = canRestoreFirstVersion(
     historyEntries,
-    currentEditorHtml,
+    currentDocumentHtml,
   )
   const canRestoreLatest = canRestoreLatestVersion(
     historyEntries,
-    currentEditorHtml,
+    currentDocumentHtml,
     activeHistoryId,
   )
 
@@ -794,8 +1071,13 @@ export function RichTextEditor() {
             onFormatChange={handlePageFormatChange}
             onOrientationChange={handlePageOrientationChange}
           />
+          <WritingModeSelect
+            mode={writingMode}
+            error={writingModeError}
+            onChange={handleWritingModeChange}
+          />
           <ExportMenu
-            getHtml={() => editor.getHTML()}
+            getHtml={() => getCurrentDocumentHtml()}
             documentTitle="Il mio documento"
             pageLayout={pageLayout}
           />
@@ -803,13 +1085,17 @@ export function RichTextEditor() {
         </>
       }
       toolbar={
-        <Toolbar
-          editor={editor}
-          isInTable={isInTable}
-          onInsertImage={openImageInsertModal}
-          onInsertTable={() => openTableInsertModal()}
-          onInsertChart={() => openChartInsertModal()}
-        />
+        sourceEditorActive ? null : (
+          <Toolbar
+            editor={editor}
+            isInTable={isInTable}
+            onInsertImage={openImageInsertModal}
+            onInsertTable={() => openTableInsertModal()}
+            onInsertChart={() => openChartInsertModal()}
+            onInsertInlineMath={() => openMathFormulaModal(false)}
+            onInsertBlockMath={() => openMathFormulaModal(true)}
+          />
+        )
       }
       metaBar={
         <HistoryRestoreActions
@@ -819,7 +1105,7 @@ export function RichTextEditor() {
           onRestoreOriginal={handleRestoreOriginal}
           onRestoreLatest={handleRestoreLatest}
           autosaveStatus={status}
-          showAiButton={aiMenuMode === 'toolbar'}
+          showAiButton={aiMenuMode === 'toolbar' && !sourceEditorActive}
           hasTextSelection={hasTextSelection}
           onAiClick={handleOpenAiModal}
         />
@@ -846,27 +1132,67 @@ export function RichTextEditor() {
             className="editor-page"
             style={{ minHeight: pageLayout.heightPx }}
           >
-            <div
-              className={
-                aiMenuMode === 'bubble'
-                  ? 'editor-content-shell editor-content-shell--bubble'
-                  : 'editor-content-shell'
-              }
-            >
-              <EditorContent editor={editor} />
-              <EditorBlockGutter
-                editor={editor}
-                enabled={aiMenuMode === 'bubble'}
-                onInsertImage={openImageInsertModal}
-                onInsertTable={() => openTableInsertModal()}
-              />
-            </div>
-            <TableHoverControls
-              editor={editor}
-              onAiGenerateTable={(tablePos) =>
-                openAiGenerate('table', { tablePos })
-              }
-            />
+            {writingMode === 'markdown' ? (
+              <div className="editor-content-shell editor-content-shell--markdown">
+                {writingModeError && (
+                  <p className="source-editor-error" role="alert">
+                    {writingModeError}
+                  </p>
+                )}
+                <MarkdownEditorPane
+                  value={markdownSource}
+                  onChange={handleMarkdownSourceChange}
+                />
+              </div>
+            ) : writingMode === 'latex' ? (
+              <div className="editor-content-shell editor-content-shell--latex">
+                {writingModeError && (
+                  <p className="source-editor-error" role="alert">
+                    {writingModeError}
+                  </p>
+                )}
+                <LatexEditorPane
+                  value={latexSource}
+                  onChange={handleLatexSourceChange}
+                />
+              </div>
+            ) : writingMode === 'typst' ? (
+              <div className="editor-content-shell editor-content-shell--typst">
+                {writingModeError && (
+                  <p className="source-editor-error" role="alert">
+                    {writingModeError}
+                  </p>
+                )}
+                <TypstEditorPane
+                  value={typstSource}
+                  onChange={handleTypstSourceChange}
+                />
+              </div>
+            ) : (
+              <>
+                <div
+                  className={
+                    aiMenuMode === 'bubble'
+                      ? 'editor-content-shell editor-content-shell--bubble'
+                      : 'editor-content-shell'
+                  }
+                >
+                  <EditorContent editor={editor} />
+                  <EditorBlockGutter
+                    editor={editor}
+                    enabled={aiMenuMode === 'bubble'}
+                    onInsertImage={openImageInsertModal}
+                    onInsertTable={() => openTableInsertModal()}
+                  />
+                </div>
+                <TableHoverControls
+                  editor={editor}
+                  onAiGenerateTable={(tablePos) =>
+                    openAiGenerate('table', { tablePos })
+                  }
+                />
+              </>
+            )}
           </div>
         </div>
         <EditorMetaFooter
@@ -874,12 +1200,14 @@ export function RichTextEditor() {
           lastSavedAt={lastSavedAt}
           documentMeta={documentMeta}
         />
-        <EditorInsertContextMenu
-          editor={editor}
-          enabled={aiMenuMode === 'bubble' || aiMenuMode === 'contextmenu'}
-          onAiClick={handleOpenAiModal}
-          onAiQuickAction={handleAiQuickAction}
-        />
+        {!sourceEditorActive && (
+          <EditorInsertContextMenu
+            editor={editor}
+            enabled={aiMenuMode === 'bubble' || aiMenuMode === 'contextmenu'}
+            onAiClick={handleOpenAiModal}
+            onAiQuickAction={handleAiQuickAction}
+          />
+        )}
       </div>
 
       <AiPromptModal
@@ -958,6 +1286,13 @@ export function RichTextEditor() {
         }}
         onSave={handleSaveChart}
         onAiGenerate={handleChartModalAi}
+      />
+
+      <MathFormulaModal
+        isOpen={mathModalOpen}
+        displayMode={mathModalDisplayMode}
+        onClose={() => setMathModalOpen(false)}
+        onSubmit={handleInsertMathFormula}
       />
     </AppShell>
   )

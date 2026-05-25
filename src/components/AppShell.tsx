@@ -20,33 +20,33 @@ export function AppShell({
   children,
 }: AppShellProps) {
   return (
-    <div className="reacta-app">
-      <div className="reacta-sticky-chrome">
-        <header className="reacta-header">
-          <div className="reacta-brand" aria-label="REACTA">
-            <span className="reacta-brand-mark" aria-hidden="true">
+    <div className="redacta-app">
+      <div className="redacta-sticky-chrome">
+        <header className="redacta-header">
+          <div className="redacta-brand" aria-label="REDACTA">
+            <span className="redacta-brand-mark" aria-hidden="true">
               R
             </span>
-            <span className="reacta-brand-name">REACTA</span>
+            <span className="redacta-brand-name">REDACTA</span>
           </div>
 
-          <div className="reacta-header-meta">
-            <h1 className="reacta-doc-title">{title}</h1>
-            {subtitle && <p className="reacta-doc-subtitle">{subtitle}</p>}
+          <div className="redacta-header-meta">
+            <h1 className="redacta-doc-title">{title}</h1>
+            {subtitle && <p className="redacta-doc-subtitle">{subtitle}</p>}
           </div>
 
           {headerActions && (
-            <div className="reacta-header-actions">{headerActions}</div>
+            <div className="redacta-header-actions">{headerActions}</div>
           )}
         </header>
 
-        {toolbar && <div className="reacta-toolbar-band">{toolbar}</div>}
+        {toolbar && <div className="redacta-toolbar-band">{toolbar}</div>}
 
-        {metaBar && <div className="reacta-meta-bar">{metaBar}</div>}
+        {metaBar && <div className="redacta-meta-bar">{metaBar}</div>}
       </div>
 
-      <div className="reacta-workspace">
-        <div className="reacta-main">{children}</div>
+      <div className="redacta-workspace">
+        <div className="redacta-main">{children}</div>
         {sidebar}
       </div>
     </div>

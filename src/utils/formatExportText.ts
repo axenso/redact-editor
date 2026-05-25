@@ -5,7 +5,7 @@ export interface TextExportOptions {
   exportedAt?: Date
 }
 
-const GENERATOR_NAME = 'REACTA'
+const GENERATOR_NAME = 'REDACTA'
 
 function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
@@ -295,6 +295,24 @@ function createTurndownService(): TurndownService {
     strongDelimiter: '**',
     codeBlockStyle: 'fenced',
     hr: '---',
+  })
+
+  service.addRule('mathFormula', {
+    filter: (node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return false
+      const el = node as HTMLElement
+      return (
+        el.classList.contains('math-formula') ||
+        (el.hasAttribute('data-latex') && el.hasAttribute('data-math-display'))
+      )
+    },
+    replacement: (_content, node) => {
+      const el = node as HTMLElement
+      const latex = el.getAttribute('data-latex')?.trim() ?? ''
+      if (!latex) return ''
+      const display = el.getAttribute('data-math-display') === 'block'
+      return display ? `\n\n$$${latex}$$\n\n` : `$${latex}$`
+    },
   })
 
   service.addRule('underline', {
