@@ -1659,6 +1659,14 @@ body.history-sidebar-resizing .resize-handle-grip {
 
 .selection-bubble-menu-host {
   z-index: 200;
+  overflow: visible;
+}
+
+.selection-bubble-menu-host .editor-insert-menu {
+  display: block;
+  width: max-content;
+  min-width: 15rem;
+  max-width: min(16.5rem, 92vw);
 }
 
 .editor-block-gutter-shell {
@@ -1789,7 +1797,7 @@ body.editor-block-dragging {
   z-index: 200;
   background: var(--surface);
   /* border: 1px solid var(--border); */
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   box-shadow: var(--shadow-md);
   overflow: hidden;
 }
@@ -1797,7 +1805,7 @@ body.editor-block-dragging {
 .context-menu-btn {
   display: block;
   width: 100%;
-  padding: 0.45rem 0.85rem;
+  padding: 0.65rem 0.85rem;
   border: none;
   background: transparent;
   color: var(--text);

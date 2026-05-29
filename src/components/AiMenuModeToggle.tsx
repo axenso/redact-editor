@@ -16,12 +16,12 @@ const AI_MENU_OPTIONS: {
   {
     id: 'bubble',
     label: 'ONE',
-    hint: 'Gutter + e menu AI al click destro sulla selezione',
+    hint: 'Gutter + Modifica con AI al click destro sulla selezione',
   },
   {
     id: 'contextmenu',
     label: 'TWO',
-    hint: 'Menu contestuale al click destro sulla selezione',
+    hint: 'Modifica con AI al click destro sulla selezione',
   },
   {
     id: 'toolbar',

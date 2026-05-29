@@ -18,6 +18,7 @@
   --shadow-md: 0 8px 32px rgba(8, 6, 13, 0.08);
   --shadow-header: 0 1px 0 rgba(8, 6, 13, 0.06);
   --radius: 12px;
+  --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-pill: 999px;
   --header-height: 64px;

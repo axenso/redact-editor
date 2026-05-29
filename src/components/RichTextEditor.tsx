@@ -34,7 +34,7 @@ import { WritingModeSelect } from './WritingModeSelect'
 import { SourceEditorToolbar } from './SourceEditorToolbar'
 import { MathFormulaModal } from './MathFormulaModal'
 import { AiPromptModal } from './AiPromptModal'
-import { EditorInsertContextMenu } from './EditorInsertContextMenu'
+import { SelectionContextMenu } from './SelectionContextMenu'
 import { EditorMetaFooter } from './EditorMetaFooter'
 import { HistoryRestoreActions } from './HistoryRestoreActions'
 import { HistorySidebar } from './HistorySidebar'
@@ -962,19 +962,6 @@ export function RichTextEditor() {
     setAiModalOpen(true)
   }, [editor])
 
-  const captureSelectionForAi = useCallback(() => {
-    if (!editor) return null
-
-    const { from, to } = editor.state.selection
-    if (from === to) return null
-
-    const text = getSelectedTextFromRange(editor.state.doc, from, to)
-    setSelectionRange({ from, to })
-    setSelectedText(text)
-    setError(null)
-    return { from, to, text }
-  }, [editor])
-
   const handleCloseAiModal = useCallback(() => {
     if (isLoading) return
     setAiModalOpen(false)
@@ -1092,15 +1079,6 @@ export function RichTextEditor() {
     ],
   )
 
-  const handleAiQuickAction = useCallback(
-    (instruction: string) => {
-      const selection = captureSelectionForAi()
-      if (!selection) return
-      void handleAiSubmit(instruction, selection)
-    },
-    [captureSelectionForAi, handleAiSubmit],
-  )
-
   if (!editor) {
     return <div className="editor-loading">Caricamento editor…</div>
   }
@@ -1158,14 +1136,18 @@ export function RichTextEditor() {
       }
       toolbar={
         writingMode === 'visual' ? (
-          <Toolbar
-            editor={editor}
-            isInTable={isInTable}
-            onInsertImage={openImageInsertModal}
-            onInsertTable={() => openTableInsertModal()}
-            onInsertChart={() => openChartInsertModal()}
-            onInsertMath={() => openMathFormulaModal(false)}
-          />
+          editor ? (
+            <Toolbar
+              editor={editor}
+              isInTable={isInTable}
+              onInsertImage={openImageInsertModal}
+              onInsertTable={() => openTableInsertModal()}
+              onInsertChart={() => openChartInsertModal()}
+              onInsertMath={() => openMathFormulaModal(false)}
+            />
+          ) : (
+            <div className="toolbar" role="toolbar" aria-busy="true" aria-label="Caricamento editor" />
+          )
         ) : (
           <SourceEditorToolbar
             mode={writingMode}
@@ -1266,7 +1248,7 @@ export function RichTextEditor() {
               aria-hidden={sourceEditorActive}
             >
               <EditorContent editor={editor} />
-              {!sourceEditorActive && (
+              {editor && !sourceEditorActive && (
                 <>
                   <EditorBlockGutter
                     editor={editor}
@@ -1290,14 +1272,15 @@ export function RichTextEditor() {
           lastSavedAt={lastSavedAt}
           documentMeta={documentMeta}
         />
-        {!sourceEditorActive && (
-          <EditorInsertContextMenu
-            editor={editor}
-            enabled={aiMenuMode === 'bubble' || aiMenuMode === 'contextmenu'}
-            onAiClick={handleOpenAiModal}
-            onAiQuickAction={handleAiQuickAction}
-          />
-        )}
+        {editor &&
+          !sourceEditorActive &&
+          (aiMenuMode === 'bubble' || aiMenuMode === 'contextmenu') && (
+            <SelectionContextMenu
+              editor={editor}
+              enabled
+              onAiClick={handleOpenAiModal}
+            />
+          )}
       </div>
 
       <AiPromptModal

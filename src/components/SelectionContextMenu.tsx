@@ -93,7 +93,7 @@ export function SelectionContextMenu({
         onClick={handleAiClick}
       >
         <AppIcon icon={Sparkles} size="sm" />
-        Modifica con AI
+        {/* Modifica con AI */}
       </button>
     </div>
   )
